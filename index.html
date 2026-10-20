@@ -1,165 +1,26 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101114">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <meta name="description" content="MilchikTG — мессенджер для общения">
-  <title>MilchikTG</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10131d"><meta name="description" content="MilchikTG — общайся, публикуй, находи своих"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><title>MilchikTG — твоя сеть</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="toast" class="toast hidden" role="status"></div>
-
-  <main id="authView" class="auth-view">
-    <section class="auth-card">
-      <h1>MilchikTG</h1>
-      <p class="muted">Общение без лишнего</p>
-      <div class="auth-tabs">
-        <button class="tab active" data-mode="login">Войти</button>
-        <button class="tab" data-mode="register">Создать аккаунт</button>
-      </div>
-      <form id="authForm">
-        <label id="nameLabel" class="hidden">Имя
-          <input id="displayName" type="text" maxlength="40" autocomplete="name" placeholder="Как вас зовут?">
-        </label>
-        <label>Email
-          <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
-        </label>
-        <label>Пароль
-          <input id="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Не менее 8 символов">
-        </label>
-        <button id="authSubmit" class="primary full" type="submit">Войти</button>
-        <button id="resetPassword" class="link-button" type="button">Забыли пароль?</button>
-      </form>
-      <form id="verifyForm" class="hidden" novalidate>
-        <h2 class="verify-title">Подтверждение почты</h2>
-        <p class="muted verify-copy">Мы отправили письмо со ссылкой для подтверждения. Открой ссылку в письме, затем вернись сюда и войди в аккаунт.</p>
-        <button id="resendLink" class="primary full" type="button">Отправить письмо ещё раз</button>
-        <button id="backToAuth" class="link-button" type="button">Вернуться ко входу</button>
-      </form>
-    </section>
-  </main>
-
-  <main id="appView" class="app hidden">
-    <aside id="sidebar" class="sidebar">
-      <header class="sidebar-head">
-        <div class="wordmark">MilchikTG</div>
-        <button id="newChatBtn" class="round-button" title="Найти пользователя" aria-label="Найти пользователя">＋</button>
-      </header>
-      <div class="search-box">
-        <span aria-hidden="true">⌕</span>
-        <input id="chatSearch" type="search" placeholder="Поиск чатов">
-      </div>
-      <div class="list-head">
-        <span>Сообщения</span>
-        <div class="list-actions"><button id="findPeopleBtn" class="subtle-button">Новый чат</button><button id="browseChannelsBtn" class="subtle-button">Каналы</button><button id="createSpaceBtn" class="subtle-button" title="Создать группу или канал">＋</button></div>
-      </div>
-      <div id="chatList" class="chat-list">
-        <div class="empty-list">Чаты появятся здесь</div>
-      </div>
-      <footer class="account-footer">
-        <div id="myAvatar" class="avatar">M</div>
-        <div class="account-copy"><strong id="myName">Профиль</strong><span id="myEmail"></span></div>
-        <button id="profileBtn" class="subtle-button" title="Настройки">⚙</button>
-        <button id="logoutBtn" class="subtle-button" title="Выйти">↪</button>
-      </footer>
-    </aside>
-
-    <section class="chat-area">
-      <div id="welcome" class="welcome">
-        <h2>MilchikTG</h2>
-        <p>Выберите переписку или найдите пользователя, чтобы начать общение.</p>
-        <button id="welcomeFindBtn" class="primary">Найти пользователя</button>
-      </div>
-
-      <section id="conversation" class="conversation hidden">
-        <header class="chat-header">
-          <button id="backBtn" class="round-button back-button" aria-label="Назад">‹</button>
-          <div id="peerAvatar" class="avatar">?</div>
-          <div class="peer-copy">
-            <strong id="peerName">Чат</strong>
-            <span id="peerEmail">Личная переписка</span>
-          </div>
-          <button id="chatOptionsBtn" class="subtle-button" type="button" title="Информация о чате">⋯</button><button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
-        </header>
-        <div id="messages" class="messages">
-          <div class="empty-list">Загрузка сообщений…</div>
-        </div>
-        <form id="composer" class="composer">
-          <button id="attachBtn" class="composer-tool" type="button" title="Прикрепить фото" aria-label="Прикрепить фото">＋</button><input id="imageInput" type="file" accept="image/*" class="hidden">
-          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Напишите сообщение…" aria-label="Сообщение"></textarea>
-          <button id="voiceBtn" class="composer-tool" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button><button id="sendBtn" class="send-button" type="submit" aria-label="Отправить">➤</button>
-        </form>
-        <div class="composer-note">Enter — отправить · Shift+Enter — новая строка · ПК: правая кнопка по сообщению · телефон: нажмите на сообщение</div>
-      </section>
-    </section>
-  </main>
-
-  <dialog id="peopleDialog" class="dialog">
-    <form method="dialog" class="dialog-head">
-      <div><h2>Новый чат</h2><p class="muted">Найдите человека по отображаемому имени.</p></div>
-      <button class="close-button" aria-label="Закрыть">×</button>
-    </form>
-    <div class="dialog-body">
-      <input id="peopleSearch" class="dialog-search" type="search" placeholder="Введите имя или email">
-      <div id="peopleResults" class="people-results"><p class="muted">Начните вводить запрос.</p></div>
-    </div>
-  </dialog>
-
-  <dialog id="channelsDialog" class="dialog">
-    <form method="dialog" class="dialog-head"><div><h2>Открытые каналы</h2><p class="muted">Найдите канал и присоединитесь.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
-    <div class="dialog-body"><div id="channelsResults" class="people-results"><p class="muted">Загрузка каналов…</p></div></div>
-  </dialog>
-
-  <dialog id="spaceDialog" class="dialog">
-    <form method="dialog" class="dialog-head"><div><h2>Создать сообщество</h2><p class="muted">Группа для общения или канал для публикаций.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
-    <form id="spaceForm" class="dialog-body profile-form">
-      <label>Название<input id="spaceTitle" maxlength="60" required placeholder="Например, Друзья"></label>
-      <label>Тип<select id="spaceType"><option value="group">Группа</option><option value="channel">Канал</option></select></label>
-      <label id="spaceMembersLabel">Имена участников (через запятую)<input id="spaceMembers" placeholder="friend@example.com"></label>
-      <button class="primary" type="submit">Создать</button>
-    </form>
-  </dialog>
-
-  <dialog id="settingsDialog" class="dialog settings-dialog">
-    <form method="dialog" class="dialog-head"><div><h2>Настройки</h2><p class="muted">Персонализируйте MilchikTG.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
-    <div class="settings-layout"><nav class="settings-nav"><button class="settings-tab active" data-settings-tab="account">Аккаунт</button><button class="settings-tab" data-settings-tab="appearance">Оформление</button><button class="settings-tab" data-settings-tab="privacy">Приватность</button><button class="settings-tab" data-settings-tab="notifications">Уведомления</button></nav>
-      <section class="settings-content" data-settings-panel="account"><h3>Аккаунт</h3><p class="muted">Измените имя и описание в своём профиле.</p><button id="openProfileFromSettings" class="primary" type="button">Редактировать профиль</button><hr><button id="settingsLogoutBtn" class="danger-button" type="button">Выйти из аккаунта</button></section>
-      <section class="settings-content hidden" data-settings-panel="appearance"><h3>Оформление</h3><label>Цвет интерфейса<select id="accentSetting"><option value="#7c5cff">Фиолетовый</option><option value="#2f9cf4">Синий</option><option value="#14a878">Зелёный</option><option value="#e36b9a">Розовый</option></select></label><label class="toggle-line">Компактный список чатов<input id="compactSetting" type="checkbox"></label><label class="toggle-line">Уменьшенная анимация<input id="motionSetting" type="checkbox"></label><button id="saveAppearanceBtn" class="primary" type="button">Сохранить оформление</button><hr><h3>Установка приложения</h3><p class="muted">Добавьте MilchikTG на главный экран телефона или на рабочий стол компьютера.</p><button id="installAppBtn" class="primary" type="button">Установить MilchikTG</button></section>
-      <section class="settings-content hidden" data-settings-panel="privacy"><h3>Приватность</h3><label class="toggle-line">Показывать описание в поиске<input id="bioSearchSetting" type="checkbox" checked></label><p class="muted small">Эти настройки сохраняются в этом браузере. Настройки не меняют серверные правила доступа.</p><button id="savePrivacyBtn" class="primary" type="button">Сохранить приватность</button></section>
-      <section class="settings-content hidden" data-settings-panel="notifications"><h3>Уведомления</h3><label class="toggle-line">Звуковой сигнал в этой вкладке<input id="soundSetting" type="checkbox"></label><p class="muted small">Звук работает, пока приложение открыто. Уведомления браузера могут требовать отдельного разрешения.</p><button id="saveNotificationsBtn" class="primary" type="button">Сохранить уведомления</button></section>
-    </div>
-  </dialog>
-
-  <dialog id="profileDialog" class="dialog">
-    <form method="dialog" class="dialog-head">
-      <div><h2>Профиль</h2><p class="muted">Настройки вашего аккаунта.</p></div>
-      <button class="close-button" aria-label="Закрыть">×</button>
-    </form>
-    <form id="profileForm" class="dialog-body profile-form">
-      <div class="avatar-editor"><div id="profileAvatarPreview" class="avatar avatar-large">M</div><label class="avatar-upload-label">Фото профиля<input id="avatarInput" type="file" accept="image/*"></label></div>
-      <label>Отображаемое имя
-        <input id="profileName" maxlength="40" required>
-      </label>
-      <label>О себе
-        <textarea id="profileBio" maxlength="180" rows="3" placeholder="Коротко о себе"></textarea>
-      </label>
-      <p id="profileEmail" class="muted small"></p>
-      <button class="primary" type="submit">Сохранить изменения</button>
-    </form>
-  </dialog>
-
-  <dialog id="publicProfileDialog" class="dialog public-profile-dialog">
-    <form method="dialog" class="dialog-head"><div><h2>Профиль пользователя</h2><p class="muted">Информация об аккаунте</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
-    <div class="dialog-body public-profile-body"><div id="publicProfileAvatar" class="avatar avatar-large">?</div><h3 id="publicProfileName">Пользователь</h3><p id="publicProfileBio" class="muted">Нет описания</p><button id="publicProfileMessageBtn" class="primary" type="button">Написать сообщение</button></div>
-  </dialog>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="script.js"></script>
-</body>
-</html>
+<div id="toast" class="toast" role="status"></div>
+<section id="authView" class="auth-shell"><div class="auth-art"><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div><div class="brand-mark">M<span>✦</span></div><p class="eyebrow">ТВОЙ МИР. ТВОИ ЛЮДИ.</p><h1>Больше, чем<br><em>переписка.</em></h1><p class="art-copy">Общайся, делись моментами и создавай свои сообщества в одном месте.</p><div class="art-pills"><span>✦ Общение</span><span>◉ Сообщества</span><span>↗ Идеи</span></div></div><div class="auth-panel"><div class="auth-brand">Milchik<span>TG</span></div><div class="auth-intro"><h2 id="authHeading">С возвращением</h2><p id="authSub">Войди, чтобы продолжить общение.</p></div><div class="auth-switch"><button class="active" data-auth-mode="login">Войти</button><button data-auth-mode="register">Создать аккаунт</button></div><form id="authForm"><label id="nameField" class="hidden">Как тебя зовут<input id="displayName" maxlength="40" autocomplete="name" placeholder="Твоё имя"></label><label>Email<input id="email" type="email" autocomplete="email" required placeholder="name@example.com"></label><label>Пароль<input id="password" type="password" minlength="8" autocomplete="current-password" required placeholder="Минимум 8 символов"></label><button id="authSubmit" class="btn btn-primary wide" type="submit">Войти в MilchikTG <span>→</span></button><button id="forgotBtn" class="text-button" type="button">Забыл пароль?</button></form><p class="auth-foot">Продолжая, ты соглашаешься общаться уважительно и соблюдать правила сообщества.</p></div></section>
+<div id="appView" class="app-shell hidden">
+<aside class="rail"><a class="rail-brand" href="#home" aria-label="MilchikTG">M<span>✦</span></a><nav class="rail-nav"><button class="nav-item active" data-page="home" title="Главная"><i>⌂</i><span>Главная</span></button><button class="nav-item" data-page="messages" title="Сообщения"><i>▤</i><span>Сообщения</span><b id="unreadBadge" class="nav-badge hidden">•</b></button><button class="nav-item" data-page="communities" title="Сообщества"><i>◉</i><span>Сообщества</span></button><button class="nav-item" data-page="explore" title="Поиск"><i>⌕</i><span>Найти</span></button><button class="nav-item" data-page="notifications" title="Уведомления"><i>♧</i><span>Уведомления</span></button></nav><div class="rail-bottom"><button class="nav-item" data-page="profile" title="Мой профиль"><i id="railAvatar" class="mini-avatar">M</i><span>Профиль</span></button><button class="nav-item" id="settingsOpen" title="Настройки"><i>⚙</i><span>Настройки</span></button><button class="nav-item" id="logoutBtn" title="Выйти"><i>↪</i><span>Выйти</span></button></div></aside>
+<main class="main-area"><header class="topbar"><div><div class="top-kicker">ТВОЁ ПРОСТРАНСТВО</div><h1 id="pageTitle">Главная</h1></div><div class="top-actions"><label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Поиск людей и сообществ" type="search"></label><button id="topProfile" class="top-avatar" title="Мой профиль">M</button></div></header>
+<section id="page-home" class="page active"><div class="home-grid"><div class="feed-column"><section class="welcome-banner"><div><p class="eyebrow">РАДЫ ТЕБЯ ВИДЕТЬ</p><h2>Твой круг.<br><em>Твои истории.</em></h2><p>Поделись тем, что у тебя нового.</p></div><div class="banner-shapes"><span>✦</span><i></i><b></b></div></section><section class="composer-card"><div class="compose-top"><div id="composeAvatar" class="avatar">M</div><button id="postPrompt" class="compose-prompt">Что у тебя нового?</button></div><div id="postPreviewWrap" class="post-preview-wrap hidden"><img id="postPreview" alt="Предпросмотр"><button id="clearPostImage" type="button">×</button></div><div class="compose-actions"><button id="postImageBtn" class="soft-action" type="button">▧ <span>Фото</span></button><input id="postImageInput" class="hidden" type="file" accept="image/*"><button id="moodBtn" class="soft-action" type="button">☻ <span>Настроение</span></button><button id="publishPost" class="btn btn-primary" type="button" disabled>Опубликовать ↗</button></div><textarea id="postText" class="post-textarea hidden" maxlength="3000" placeholder="Расскажи, что у тебя на уме..."></textarea></section><div class="feed-heading"><div><h2>Твоя лента</h2><p>Свежие моменты от людей</p></div><select id="feedSort" aria-label="Сортировка ленты"><option value="new">Сначала новые</option><option value="popular">Популярное</option></select></div><div id="feedList" class="feed-list"><div class="loading-card">Загружаем ленту…</div></div></div><aside class="right-column"><section class="side-card mini-profile-card"><div class="side-card-top"><span>ТВОЙ ПРОФИЛЬ</span><button data-page="profile" class="plain-link">Изменить ↗</button></div><div class="mini-profile"><div id="sideAvatar" class="avatar avatar-xl">M</div><div><strong id="sideName">Твой профиль</strong><span id="sideHandle">@username</span></div></div><p id="sideBio" class="muted">Добавь пару слов о себе.</p><div class="profile-stats"><div><b id="followingCount">0</b><span>Подписки</span></div><div><b id="followersCount">0</b><span>Подписчики</span></div><div><b id="postCount">0</b><span>Публикации</span></div></div></section><section class="side-card"><div class="side-card-top"><span>ЛЮДИ ДЛЯ ТЕБЯ</span><button id="seePeopleBtn" class="plain-link">Все ↗</button></div><div id="suggestedPeople" class="suggested-list"><p class="muted">Загрузка…</p></div></section><section class="side-card community-promo"><div class="promo-icon">◉</div><h3>Найди своих</h3><p>Создай группу или запусти канал вокруг своей идеи.</p><button id="createCommunityShortcut" class="btn btn-dark wide">Создать сообщество +</button></section><footer class="app-footer">MilchikTG · Твоя сеть<br><span>Общайся с уважением ✦</span></footer></aside></div></section>
+<section id="page-messages" class="page"><div class="messages-layout"><aside class="inbox-panel"><div class="section-head"><div><h2>Сообщения</h2><p>Личные чаты и группы</p></div><button id="newChatBtn" class="icon-button" title="Новый чат">＋</button></div><input id="chatSearch" class="field-search" type="search" placeholder="Найти переписку"><div id="chatList" class="chat-list"><p class="muted pad">Твои переписки появятся здесь.</p></div></aside><section class="conversation-panel"><div id="chatWelcome" class="chat-empty"><div class="empty-illustration">✉</div><h2>Начни разговор</h2><p>Выбери чат слева или найди человека, чтобы написать первым.</p><button id="chatFindPeople" class="btn btn-primary">Найти человека</button></div><div id="chatRoom" class="chat-room hidden"><header class="chat-room-head"><button id="chatBack" class="icon-button mobile-only">‹</button><button id="chatPeerAvatar" class="avatar">?</button><div class="peer-meta"><strong id="chatPeerName">Чат</strong><span id="chatPeerSub">MilchikTG</span></div><button id="chatInfoBtn" class="icon-button" title="Информация">⋯</button></header><div id="chatMessages" class="chat-messages"></div><div class="pinned-strip hidden" id="pinnedStrip"></div><form id="messageForm" class="message-composer"><button id="messageAttachBtn" class="composer-icon" type="button" title="Фото или файл">＋</button><input id="messageFile" class="hidden" type="file" accept="image/*,audio/*"><textarea id="messageText" rows="1" maxlength="4000" placeholder="Напиши сообщение…"></textarea><button id="recordVoiceBtn" class="composer-icon" type="button" title="Голосовое сообщение">♬</button><button class="send-circle" type="submit" aria-label="Отправить">➤</button></form><div class="composer-hint">Enter — отправить · Shift+Enter — перенос строки</div></div></section></div></section>
+<section id="page-communities" class="page"><div class="page-intro"><div><p class="eyebrow">ОБЩИЕ ИНТЕРЕСЫ</p><h2>Сообщества</h2><p>Группы для общения и каналы для публикаций.</p></div><button id="createCommunityBtn" class="btn btn-primary">＋ Создать</button></div><div class="community-tabs"><button class="active" data-community-filter="all">Все</button><button data-community-filter="group">Группы</button><button data-community-filter="channel">Каналы</button><button data-community-filter="mine">Мои</button></div><div id="communityGrid" class="community-grid"><div class="loading-card">Загружаем сообщества…</div></div></section>
+<section id="page-explore" class="page"><div class="page-intro"><div><p class="eyebrow">ОТКРЫВАЙ НОВОЕ</p><h2>Найти людей</h2><p>Находи интересных людей и присоединяйся к сообществам.</p></div></div><label class="explore-search"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Имя или @никнейм"></label><div id="peopleGrid" class="people-grid"><p class="muted">Начни вводить имя для поиска.</p></div></section>
+<section id="page-notifications" class="page"><div class="page-intro"><div><p class="eyebrow">БУДЬ В КУРСЕ</p><h2>Уведомления</h2><p>Реакции и новые подписчики.</p></div><button id="markNotificationsRead" class="btn btn-ghost">Отметить прочитанными</button></div><div id="notificationsList" class="notifications-list"><p class="muted">Пока уведомлений нет.</p></div></section>
+<section id="page-profile" class="page"><div class="profile-cover" id="profileCover"><div class="cover-decoration">✦</div><button id="editProfileBtn" class="btn btn-light">✎ Редактировать профиль</button></div><section class="profile-main"><div id="profilePageAvatar" class="avatar profile-avatar">M</div><div class="profile-title-row"><div><h2 id="profilePageName">Твой профиль</h2><p id="profilePageHandle" class="muted">@username</p></div><button id="profileShareBtn" class="icon-button" title="Скопировать ссылку на профиль">↗</button></div><p id="profilePageBio" class="profile-bio">Добавь описание, чтобы люди узнали тебя.</p><div class="profile-stats large-stats"><div><b id="profileFollowingCount">0</b><span>Подписки</span></div><div><b id="profileFollowersCount">0</b><span>Подписчики</span></div><div><b id="profilePostsCount">0</b><span>Публикации</span></div></div><div class="profile-tabs"><button class="active" data-profile-tab="posts">Публикации</button><button data-profile-tab="media">Медиа</button><button data-profile-tab="liked">Понравилось</button></div><div id="profilePosts" class="feed-list"><p class="muted">Публикаций пока нет.</p></div></section></section>
+</main></div>
+<dialog id="profileDialog" class="modal"><form method="dialog" class="modal-head"><div><h2>Редактировать профиль</h2><p>Покажи людям свою индивидуальность.</p></div><button class="close-modal">×</button></form><form id="profileForm" class="modal-body"><div class="avatar-edit-row"><div id="editAvatarPreview" class="avatar avatar-xl">M</div><label class="btn btn-ghost upload-label">Загрузить аватар<input id="avatarInput" type="file" accept="image/*" hidden></label></div><label>Имя<input id="profileName" maxlength="40" required></label><label>Никнейм<input id="profileUsername" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="vlad_123"><small>Латинские буквы, цифры и подчёркивание; от 3 символов.</small></label><label>О себе<textarea id="profileBio" maxlength="240" rows="3" placeholder="Расскажи о себе..."></textarea></label><button class="btn btn-primary wide" type="submit">Сохранить профиль</button></form></dialog>
+<dialog id="communityDialog" class="modal"><form method="dialog" class="modal-head"><div><h2>Новое сообщество</h2><p>Создай место для своей идеи.</p></div><button class="close-modal">×</button></form><form id="communityForm" class="modal-body"><label>Название<input id="communityTitle" maxlength="60" required placeholder="Например, Игровая комната"></label><label>Тип<select id="communityType"><option value="group">Группа — общение участников</option><option value="channel">Канал — публикации от автора</option></select></label><label>Описание<textarea id="communityDescription" maxlength="300" rows="3" placeholder="О чём это сообщество?"></textarea></label><p class="muted small">Открытые сообщества видны другим участникам; создатель может публиковать и общаться внутри.</p><button class="btn btn-primary wide" type="submit">Создать сообщество</button></form></dialog>
+<dialog id="settingsDialog" class="modal settings-modal"><form method="dialog" class="modal-head"><div><h2>Настройки</h2><p>Сделай MilchikTG своим.</p></div><button class="close-modal">×</button></form><div class="settings-body"><nav class="settings-nav"><button class="active" data-setting="appearance">Внешний вид</button><button data-setting="privacy">Приватность</button><button data-setting="notifications">Уведомления</button><button data-setting="account">Аккаунт</button></nav><section class="setting-panel" data-setting-panel="appearance"><h3>Внешний вид</h3><label>Акцентный цвет<select id="accentColor"><option value="#8b78ff">Лавандовый</option><option value="#4c9cff">Синий</option><option value="#25b99a">Мятный</option><option value="#ff7da8">Розовый</option><option value="#f5a742">Янтарный</option></select></label><label class="check-row">Компактный интерфейс<input id="compactMode" type="checkbox"></label><label class="check-row">Меньше анимаций<input id="reducedMotion" type="checkbox"></label><button id="saveAppearance" class="btn btn-primary">Сохранить</button><hr><h3>Установка приложения</h3><p class="muted">Добавь MilchikTG на главный экран или рабочий стол.</p><button id="installAppBtn" class="btn btn-ghost">Установить приложение</button></section><section class="setting-panel hidden" data-setting-panel="privacy"><h3>Приватность</h3><label class="check-row">Разрешить находить меня в поиске<input id="discoverable" type="checkbox" checked></label><p class="muted small">Эта настройка влияет на интерфейс поиска. Для полной серверной приватности нужны дополнительные политики.</p><button id="savePrivacy" class="btn btn-primary">Сохранить</button></section><section class="setting-panel hidden" data-setting-panel="notifications"><h3>Уведомления</h3><label class="check-row">Звуки в открытой вкладке<input id="soundEnabled" type="checkbox"></label><button id="browserNotifications" class="btn btn-ghost">Разрешить уведомления браузера</button><button id="saveNotifications" class="btn btn-primary">Сохранить</button></section><section class="setting-panel hidden" data-setting-panel="account"><h3>Аккаунт</h3><p class="muted">Аккаунт защищён входом по email и паролю.</p><button id="changeProfileFromSettings" class="btn btn-ghost">Редактировать профиль</button><hr><button id="deleteAccountInfo" class="btn btn-danger" type="button">Выйти из аккаунта</button></section></div></dialog>
+<dialog id="userDialog" class="modal user-modal"><form method="dialog" class="modal-head"><div><h2>Профиль</h2><p>Знакомься и общайся.</p></div><button class="close-modal">×</button></form><div class="modal-body user-card-body"><div id="userDialogAvatar" class="avatar avatar-xl">?</div><h2 id="userDialogName">Пользователь</h2><p id="userDialogHandle" class="muted">@username</p><p id="userDialogBio"></p><div class="user-card-actions"><button id="userFollowBtn" class="btn btn-primary">Подписаться</button><button id="userMessageBtn" class="btn btn-ghost">Написать</button></div></div></dialog>
+<dialog id="commentsDialog" class="modal"><form method="dialog" class="modal-head"><div><h2>Комментарии</h2><p>Обсуди публикацию.</p></div><button class="close-modal">×</button></form><div id="commentsList" class="comments-list"></div><form id="commentForm" class="comment-form"><input id="commentText" maxlength="1000" placeholder="Написать комментарий…" required><button class="btn btn-primary" type="submit">Отправить</button></form></dialog>
+<dialog id="messageActionsDialog" class="modal action-modal"><form method="dialog" class="modal-head"><div><h2>Сообщение</h2><p>Действия с сообщением</p></div><button class="close-modal">×</button></form><div class="modal-body action-list"><button id="editMessageAction">✎ Редактировать</button><button id="pinMessageAction">⌖ Закрепить / открепить</button><button id="deleteMessageAction" class="danger-text">⌫ Удалить</button></div></dialog>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="script.js"></script>
+</body></html>

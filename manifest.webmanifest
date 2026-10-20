@@ -1,13 +1,1 @@
-{
-  "id": "./",
-  "name": "MilchikTG",
-  "short_name": "MilchikTG",
-  "description": "Личные сообщения, группы и каналы",
-  "lang": "ru",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#101114",
-  "theme_color": "#101114",
-  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
-}
+{"name":"MilchikTG — твоя сеть","short_name":"MilchikTG","start_url":"./","scope":"./","display":"standalone","background_color":"#0d1018","theme_color":"#10131d","description":"Общайся, публикуй, находи своих","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

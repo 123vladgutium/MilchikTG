@@ -1,608 +1,76 @@
-/* MilchikTG — browser client. Only the Supabase publishable/anon key belongs here.
-   Never put a Supabase service_role/secret key in a public website. */
-const CONFIG = {
-  SUPABASE_URL: "https://rsqcppzdnxghmpcqkcon.supabase.co",
-  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_flV3kJ1AMYglA9Ag0BNdnw_9_0yqzz0"
-};
-
-const $ = (selector) => document.querySelector(selector);
-const authView = $("#authView");
-const appView = $("#appView");
-const toastEl = $("#toast");
-let client = null;
-let currentUser = null;
-let currentProfile = null;
-let currentConversationId = null;
-let currentPeer = null;
-let messageChannel = null;
-let listChannel = null;
-let authMode = "login";
-let conversations = [];
-let peopleTimer = null;
-let toastTimer = null;
-let messageCache = [];
-let recording = null;
-let recordedChunks = [];
-let publicProfileTarget = null;
-
-function showToast(message, error = false) {
-  toastEl.textContent = message;
-  toastEl.classList.toggle("error", error);
-  toastEl.classList.remove("hidden");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 4200);
+'use strict';
+// Put your Supabase project URL and public publishable/anon key here. Never use service_role/secret keys in browser code.
+const CONFIG={SUPABASE_URL:'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE',SUPABASE_PUBLISHABLE_KEY:'PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE'};
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let db=null,user=null,profile=null,activePage='home',postsCache=[],selectedPost=null,selectedMessage=null,currentChat=null,chats=[],chatRows=[],chatChannel=null,installPrompt=null,selectedPostImage=null,selectedMessageFile=null,recording=null,recordedChunks=[],recordingOn=false,profileTab='posts',communityFilter='all',exploreTimer=null,toastTimer=null;
+const safe=(s='')=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initial=(s='M')=>Array.from(s.trim())[0]?.toUpperCase()||'M';
+const timeAgo=value=>{const d=Math.max(0,Date.now()-new Date(value).getTime())/1000;if(d<60)return 'только что';if(d<3600)return `${Math.floor(d/60)} мин. назад`;if(d<86400)return `${Math.floor(d/3600)} ч. назад`;if(d<604800)return `${Math.floor(d/86400)} дн. назад`;return new Date(value).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});};
+function toast(message,error=false){const el=$('#toast');el.textContent=message;el.className='toast show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='toast',3600);}
+function fail(error,fallback='Что-то пошло не так'){console.error(error);toast(error?.message||fallback,true);}
+function setAvatar(el,url,name){if(!el)return;if(url){el.innerHTML=`<img src="${safe(url)}" alt="">`;}else el.textContent=initial(name);}
+function showAuth(){ $('#authView').classList.remove('hidden');$('#appView').classList.add('hidden'); }
+function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden'); }
+function setAuthMode(mode){$$('[data-auth-mode]').forEach(b=>b.classList.toggle('active',b.dataset.authMode===mode));$('#nameField').classList.toggle('hidden',mode!=='register');$('#authHeading').textContent=mode==='register'?'Создай свой аккаунт':'С возвращением';$('#authSub').textContent=mode==='register'?'Твоя история в MilchikTG начинается здесь.':'Войди, чтобы продолжить общение.';$('#authSubmit').innerHTML=mode==='register'?'Создать аккаунт <span>→</span>':'Войти в MilchikTG <span>→</span>';$('#password').autocomplete=mode==='register'?'new-password':'current-password';$('#authForm').dataset.mode=mode;}
+async function authSubmit(e){e.preventDefault();if(!db)return;const email=$('#email').value.trim(),password=$('#password').value,mode=$('#authForm').dataset.mode||'login';$('#authSubmit').disabled=true;try{if(mode==='register'){const display_name=$('#displayName').value.trim()||email.split('@')[0];const {data,error}=await db.auth.signUp({email,password,options:{data:{display_name},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(data.session){user=data.user;await ensureProfile();await enterApp();}else toast('Письмо для подтверждения отправлено. Открой его, затем вернись на сайт и войди.');}else{const {data,error}=await db.auth.signInWithPassword({email,password});if(error)throw error;user=data.user;await enterApp();}}catch(err){fail(err,'Не удалось выполнить вход');}finally{$('#authSubmit').disabled=false;}}
+async function ensureProfile(){if(!user)return;const {data,error}=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();if(error)throw error;if(!data){const {error:insErr}=await db.from('profiles').insert({id:user.id,display_name:user.user_metadata?.display_name||user.email?.split('@')[0]||'Пользователь'});if(insErr)throw insErr;} }
+async function loadProfile(){const {data,error}=await db.from('profiles').select('*').eq('id',user.id).single();if(error)throw error;profile=data;renderMyProfile();}
+function handleName(){return profile?.username?'@'+profile.username:'@'+(user?.email?.split('@')[0]||'user');}
+function renderMyProfile(){if(!profile)return;const name=profile.display_name||'Пользователь';['#sideAvatar','#composeAvatar','#profilePageAvatar','#editAvatarPreview','#topProfile','#railAvatar'].forEach(s=>setAvatar($(s),profile.avatar_url,name));$('#sideName').textContent=name;$('#sideHandle').textContent=handleName();$('#sideBio').textContent=profile.bio||'Добавь пару слов о себе.';$('#profilePageName').textContent=name;$('#profilePageHandle').textContent=handleName();$('#profilePageBio').textContent=profile.bio||'Добавь описание, чтобы люди узнали тебя.';$('#profileName').value=name;$('#profileUsername').value=profile.username||'';$('#profileBio').value=profile.bio||'';$('#profilePostsCount').textContent=postsCache.filter(p=>p.author_id===user.id).length;$('#postCount').textContent=postsCache.filter(p=>p.author_id===user.id).length;}
+async function enterApp(){if(!user)return;try{await ensureProfile();await loadProfile();showApp();applyPrefs();await Promise.allSettled([loadFeed(),loadSuggestions(),loadChats(),loadCommunities(),loadNotifications(),loadProfileStats()]);navigate('home');subscribeFeed();}catch(err){fail(err,'Не удалось загрузить профиль');}}
+function navigate(page){activePage=page;$$('.page').forEach(el=>el.classList.toggle('active',el.id===`page-${page}`));$$('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));const names={home:'Главная',messages:'Сообщения',communities:'Сообщества',explore:'Найти людей',notifications:'Уведомления',profile:'Мой профиль'};$('#pageTitle').textContent=names[page]||'MilchikTG';if(page==='messages')loadChats();if(page==='communities')loadCommunities();if(page==='notifications')loadNotifications();if(page==='profile')renderProfilePosts();if(page==='explore')$('#peopleSearch').focus({preventScroll:true});window.scrollTo({top:0,behavior:document.body.classList.contains('reduce-motion')?'auto':'smooth'});}
+function mediaUrl(path){return db.storage.from('milchiktg-media').getPublicUrl(path).data.publicUrl;}
+async function uploadFile(file,folder){if(!file)throw new Error('Сначала выбери файл');if(file.size>12*1024*1024)throw new Error('Файл должен быть меньше 12 МБ');const allowed=['image/jpeg','image/png','image/webp','image/gif','audio/webm','audio/ogg','audio/mp4','audio/mpeg','audio/wav','video/webm'];if(!allowed.includes(file.type))throw new Error('Этот формат файла не поддерживается');const ext=(file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');const path=`${user.id}/${folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;const {error}=await db.storage.from('milchiktg-media').upload(path,file,{upsert:false,contentType:file.type,cacheControl:'3600'});if(error)throw error;return mediaUrl(path);}
+async function loadFeed(){const {data,error}=await db.from('posts').select('id,author_id,body,image_url,created_at,updated_at').order('created_at',{ascending:false}).limit(60);if(error){$('#feedList').innerHTML='<div class="empty-state">Не удалось загрузить ленту. Проверь, запускался ли social-upgrade.sql.</div>';throw error;}postsCache=data||[];await enrichPosts(postsCache);renderFeed();renderProfilePosts();renderMyProfile();}
+async function enrichPosts(rows){if(!rows.length)return;const ids=[...new Set(rows.map(p=>p.author_id))],postIds=rows.map(p=>p.id);const [pr,lr,cr,sr]=await Promise.all([db.from('profiles').select('id,display_name,username,avatar_url,bio').in('id',ids),db.from('post_likes').select('post_id,user_id').in('post_id',postIds),db.from('post_comments').select('post_id').in('post_id',postIds),db.from('saved_posts').select('post_id').eq('user_id',user.id).in('post_id',postIds)]);const profs=new Map((pr.data||[]).map(p=>[p.id,p])),likes=lr.data||[],comments=cr.data||[],saved=new Set((sr.data||[]).map(s=>s.post_id));rows.forEach(p=>{p.author=profs.get(p.author_id)||{display_name:'Пользователь'};p.likeCount=likes.filter(l=>l.post_id===p.id).length;p.liked=likes.some(l=>l.post_id===p.id&&l.user_id===user.id);p.commentCount=comments.filter(c=>c.post_id===p.id).length;p.saved=saved.has(p.id);});}
+function postCard(p){const author=p.author||{},name=author.display_name||'Пользователь',handle=author.username?'@'+author.username:'участник',isMine=p.author_id===user.id;return `<article class="feed-post" data-post="${p.id}"><header class="post-head"><button class="avatar" data-user-open="${p.author_id}" aria-label="Профиль ${safe(name)}">${author.avatar_url?`<img src="${safe(author.avatar_url)}" alt="">`:safe(initial(name))}</button><div class="post-author"><button data-user-open="${p.author_id}">${safe(name)}</button><small>${safe(handle)} · ${timeAgo(p.created_at)}${p.updated_at&&new Date(p.updated_at).getTime()-new Date(p.created_at).getTime()>2000?' · изменено':''}</small></div><button class="post-more" data-post-menu="${p.id}" aria-label="Действия">···</button></header>${p.body?`<div class="post-content">${safe(p.body)}</div>`:''}${p.image_url?`<img class="post-media" src="${safe(p.image_url)}" loading="lazy" alt="Фото публикации">`:''}<div class="post-stats"><span>${p.likeCount||0} отметок «Нравится»</span><span>${p.commentCount||0} комментариев</span></div><div class="post-actions"><button data-like="${p.id}" class="${p.liked?'liked':''}">${p.liked?'♥':'♡'} Нравится</button><button data-comments="${p.id}">◌ Комментарии</button><button data-save="${p.id}">${p.saved?'▣ Сохранено':'▢ Сохранить'}</button><button data-share="${p.id}">↗ Поделиться</button></div></article>`;}
+function renderFeed(){const list=$('#feedList');if(!postsCache.length){list.innerHTML='<div class="empty-state">Здесь пока тихо. Будь первым — опубликуй что-нибудь интересное ✦</div>';return;}let rows=[...postsCache];if($('#feedSort').value==='popular')rows.sort((a,b)=>(b.likeCount+b.commentCount*2)-(a.likeCount+a.commentCount*2));list.innerHTML=rows.map(postCard).join('');}
+async function publishPost(){const body=$('#postText').value.trim();if(!body&&!selectedPostImage){toast('Добавь текст или фотографию.',true);return;}const btn=$('#publishPost');btn.disabled=true;try{let image_url=null;if(selectedPostImage)image_url=await uploadFile(selectedPostImage,'posts');const {error}=await db.from('posts').insert({author_id:user.id,body,image_url});if(error)throw error;$('#postText').value='';$('#postText').classList.add('hidden');$('#postPreviewWrap').classList.add('hidden');selectedPostImage=null;$('#publishPost').disabled=true;toast('Публикация опубликована ✦');await loadFeed();}catch(err){fail(err,'Не удалось опубликовать. Проверь Storage и social-upgrade.sql.');}finally{btn.disabled=false;}}
+async function toggleLike(id){const p=postsCache.find(x=>x.id===id);if(!p)return;try{const result=p.liked?await db.from('post_likes').delete().eq('post_id',id).eq('user_id',user.id):await db.from('post_likes').insert({post_id:id,user_id:user.id});if(result.error)throw result.error;await loadFeed();}catch(err){fail(err,'Не удалось поставить реакцию');}}
+async function toggleSave(id){const p=postsCache.find(x=>x.id===id);if(!p)return;try{const result=p.saved?await db.from('saved_posts').delete().eq('post_id',id).eq('user_id',user.id):await db.from('saved_posts').insert({post_id:id,user_id:user.id});if(result.error)throw result.error;await loadFeed();toast(p.saved?'Убрано из сохранённого':'Публикация сохранена');}catch(err){fail(err,'Не удалось сохранить публикацию');}}
+async function openComments(id){selectedPost=id;$('#commentsDialog').showModal();await loadComments();}
+async function loadComments(){const {data,error}=await db.from('post_comments').select('id,author_id,body,created_at').eq('post_id',selectedPost).order('created_at');if(error){fail(error,'Не удалось загрузить комментарии');return;}const ids=[...new Set((data||[]).map(c=>c.author_id))];let profs=[];if(ids.length){const r=await db.from('profiles').select('id,display_name,avatar_url').in('id',ids);profs=r.data||[];}const map=new Map(profs.map(p=>[p.id,p]));$('#commentsList').innerHTML=(data||[]).length?(data||[]).map(c=>{const p=map.get(c.author_id)||{display_name:'Пользователь'};return `<div class="comment"><div class="avatar">${p.avatar_url?`<img src="${safe(p.avatar_url)}" alt="">`:safe(initial(p.display_name))}</div><div class="comment-body"><strong>${safe(p.display_name)}</strong><p>${safe(c.body)}</p></div></div>`;}).join(''):'<p class="empty-state">Будь первым, кто прокомментирует эту публикацию.</p>';}
+async function submitComment(e){e.preventDefault();const body=$('#commentText').value.trim();if(!body||!selectedPost)return;const {error}=await db.from('post_comments').insert({post_id:selectedPost,author_id:user.id,body});if(error){fail(error,'Не удалось добавить комментарий');return;}$('#commentText').value='';await loadComments();await loadFeed();}
+async function postMenu(id){const p=postsCache.find(x=>x.id===id);if(!p)return;const options=p.author_id===user.id?'Изменить текст, удалить публикацию или отменить':'Пожаловаться на публикацию или отменить';const action=prompt(`Публикация\n1 — сохранить/убрать из сохранённого\n${p.author_id===user.id?'2 — редактировать\n3 — удалить':'2 — пожаловаться'}\n\n${options}`);if(action==='1')return toggleSave(id);if(action==='2'&&p.author_id===user.id){const body=prompt('Измени текст публикации:',p.body||'');if(body===null)return;const clean=body.trim();if(!clean&&!p.image_url){toast('Публикация не может быть пустой.',true);return;}const {error}=await db.from('posts').update({body:clean,updated_at:new Date().toISOString()}).eq('id',id).eq('author_id',user.id);if(error)fail(error);else{toast('Публикация изменена');await loadFeed();}return;}if(action==='3'&&p.author_id===user.id&&confirm('Удалить публикацию и её комментарии?')){const {error}=await db.from('posts').delete().eq('id',id).eq('author_id',user.id);if(error)fail(error);else{toast('Публикация удалена');await loadFeed();}return;}if(action==='2'&&p.author_id!==user.id)toast('Жалобы пока не подключены к модераторской панели.');}
+async function sharePost(id){const url=location.origin+location.pathname+'#post-'+id;try{await navigator.clipboard.writeText(url);toast('Ссылка скопирована');}catch{prompt('Скопируй ссылку:',url);}}
+async function loadProfileStats(){const [f1,f2,pc]=await Promise.all([db.from('follows').select('following_id',{count:'exact',head:true}).eq('follower_id',user.id),db.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',user.id),db.from('posts').select('id',{count:'exact',head:true}).eq('author_id',user.id)]);$('#followingCount').textContent=f1.count||0;$('#followersCount').textContent=f2.count||0;$('#profileFollowingCount').textContent=f1.count||0;$('#profileFollowersCount').textContent=f2.count||0;$('#profilePostsCount').textContent=pc.count||0;$('#postCount').textContent=pc.count||0;}
+async function loadSuggestions(){const {data,error}=await db.from('profiles').select('id,display_name,username,avatar_url,bio').neq('id',user.id).eq('is_discoverable',true).limit(5);if(error)throw error;const rows=data||[];const {data:followData}=await db.from('follows').select('following_id').eq('follower_id',user.id);const following=new Set((followData||[]).map(f=>f.following_id));$('#suggestedPeople').innerHTML=rows.length?rows.map(p=>`<div class="suggestion"><button class="avatar" data-user-open="${p.id}">${p.avatar_url?`<img src="${safe(p.avatar_url)}" alt="">`:safe(initial(p.display_name))}</button><div class="suggestion-copy"><strong>${safe(p.display_name)}</strong><span>${safe(p.username?'@'+p.username:'Участник')}</span></div><button class="follow-mini" data-follow="${p.id}">${following.has(p.id)?'Вы подписаны':'+'}</button></div>`).join(''):'<p class="muted">Пока никого нет. Пригласи друзей ✦</p>';}
+async function searchPeople(){const q=$('#peopleSearch').value.trim();if(q.length<2){$('#peopleGrid').innerHTML='<p class="muted">Введи хотя бы 2 символа.</p>';return;}const {data,error}=await db.from('profiles').select('id,display_name,username,avatar_url,bio').neq('id',user.id).eq('is_discoverable',true).or(`display_name.ilike.%${q.replace(/[%_,]/g,' ')}%,username.ilike.%${q.replace(/[%_,]/g,' ')}%`).limit(30);if(error){fail(error,'Поиск не сработал');return;}renderPeople(data||[],'#peopleGrid');}
+async function renderPeople(rows,selector){const {data:followData}=await db.from('follows').select('following_id').eq('follower_id',user.id);const following=new Set((followData||[]).map(f=>f.following_id));$(selector).innerHTML=rows.length?rows.map(p=>`<article class="person-card"><button class="avatar avatar-xl" data-user-open="${p.id}">${p.avatar_url?`<img src="${safe(p.avatar_url)}" alt="">`:safe(initial(p.display_name))}</button><h3>${safe(p.display_name)}</h3><div class="handle">${safe(p.username?'@'+p.username:'участник MilchikTG')}</div><p>${safe(p.bio||'Пока ничего не рассказал о себе.')}</p><button class="btn ${following.has(p.id)?'btn-ghost':'btn-primary'}" data-follow="${p.id}">${following.has(p.id)?'Вы подписаны':'Подписаться'}</button><button class="btn btn-ghost" data-user-open="${p.id}">Профиль</button></article>`).join(''):'<p class="empty-state">Никого не нашли. Попробуй другой запрос.</p>';}
+async function toggleFollow(target){if(target===user.id)return;const {data,error}=await db.from('follows').select('follower_id').eq('follower_id',user.id).eq('following_id',target).maybeSingle();if(error){fail(error);return;}const res=data?await db.from('follows').delete().eq('follower_id',user.id).eq('following_id',target):await db.from('follows').insert({follower_id:user.id,following_id:target});if(res.error){fail(res.error,'Не удалось обновить подписку');return;}toast(data?'Подписка отменена':'Ты подписался ✦');await Promise.allSettled([loadSuggestions(),loadProfileStats(),searchPeople(),loadNotifications()]);if($('#userDialog').open&&$('#userDialog').dataset.userId===target)openUserProfile(target);}
+async function openUserProfile(id){const {data:p,error}=await db.from('profiles').select('id,display_name,username,avatar_url,bio').eq('id',id).maybeSingle();if(error||!p){toast('Профиль не найден',true);return;}$('#userDialog').dataset.userId=id;setAvatar($('#userDialogAvatar'),p.avatar_url,p.display_name);$('#userDialogName').textContent=p.display_name||'Пользователь';$('#userDialogHandle').textContent=p.username?'@'+p.username:'участник MilchikTG';$('#userDialogBio').textContent=p.bio||'Пока ничего не рассказал о себе.';const {data:follow}=await db.from('follows').select('follower_id').eq('follower_id',user.id).eq('following_id',id).maybeSingle();$('#userFollowBtn').classList.toggle('btn-ghost',!!follow);$('#userFollowBtn').textContent=follow?'Отписаться':'Подписаться';$('#userFollowBtn').classList.toggle('hidden',id===user.id);$('#userMessageBtn').classList.toggle('hidden',id===user.id);$('#userDialog').showModal();}
+async function saveProfile(e){e.preventDefault();const display_name=$('#profileName').value.trim(),username=$('#profileUsername').value.trim().toLowerCase(),bio=$('#profileBio').value.trim();if(username&&!/^[a-z0-9_]{3,24}$/.test(username)){toast('Никнейм: 3–24 символа, латиница, цифры и _',true);return;}const {error}=await db.from('profiles').update({display_name,username:username||null,bio,updated_at:new Date().toISOString()}).eq('id',user.id);if(error){fail(error,'Не удалось сохранить профиль. Возможно, никнейм уже занят.');return;}await loadProfile();$('#profileDialog').close();toast('Профиль обновлён');await loadProfileStats();}
+async function uploadAvatar(file){if(!file)return;if(!file.type.startsWith('image/')){toast('Выбери изображение.',true);return;}try{const url=await uploadFile(file,'avatars');const {error}=await db.from('profiles').update({avatar_url:url,updated_at:new Date().toISOString()}).eq('id',user.id);if(error)throw error;await loadProfile();setAvatar($('#editAvatarPreview'),url,profile.display_name);toast('Аватар обновлён');}catch(err){fail(err,'Не удалось загрузить аватар. Проверь Storage и SQL.');}}
+async function renderProfilePosts(){if(!profile)return;let rows=postsCache.filter(p=>p.author_id===user.id);if(profileTab==='liked'){const {data}=await db.from('post_likes').select('post_id').eq('user_id',user.id);const ids=(data||[]).map(x=>x.post_id);rows=postsCache.filter(p=>ids.includes(p.id));}if(profileTab==='media')rows=rows.filter(p=>p.image_url);$('#profilePosts').innerHTML=rows.length?rows.map(postCard).join(''):'<div class="empty-state">Здесь пока ничего нет.</div>';}
+async function loadNotifications(){const {data,error}=await db.from('notifications').select('id,actor_id,kind,post_id,is_read,created_at').eq('recipient_id',user.id).order('created_at',{ascending:false}).limit(50);if(error){$('#notificationsList').innerHTML='<p class="muted">Уведомления пока недоступны.</p>';return;}const rows=data||[];const ids=[...new Set(rows.map(n=>n.actor_id).filter(Boolean))];let profs=[];if(ids.length){const r=await db.from('profiles').select('id,display_name,avatar_url').in('id',ids);profs=r.data||[];}const map=new Map(profs.map(p=>[p.id,p]));$('#notificationsList').innerHTML=rows.length?rows.map(n=>{const p=map.get(n.actor_id)||{display_name:'Кто-то'};const text=n.kind==='like'?'поставил отметку «Нравится» на твою публикацию':n.kind==='comment'?'прокомментировал твою публикацию':'подписался на тебя';return `<div class="notifications-item"><div class="notification-icon">${n.kind==='like'?'♥':n.kind==='comment'?'◌':'＋'}</div><div><strong>${safe(p.display_name)}</strong><p>${text} · ${timeAgo(n.created_at)}</p></div>${n.is_read?'':'<span class="notification-icon" style="width:10px;height:10px;min-width:10px;border-radius:50%;margin-left:auto"></span>'}</div>`;}).join(''):'<div class="empty-state">Уведомлений пока нет. Здесь появятся реакции и новые подписчики.</div>';$('#unreadBadge').classList.toggle('hidden',!rows.some(n=>!n.is_read));}
+async function markNotifications(){const {error}=await db.from('notifications').update({is_read:true}).eq('recipient_id',user.id).eq('is_read',false);if(error)fail(error);else{toast('Уведомления отмечены прочитанными');await loadNotifications();}}
+async function loadCommunities(){const {data,error}=await db.from('conversations').select('id,title,description,type,created_by,created_at,visibility').in('type',['group','channel']).order('created_at',{ascending:false}).limit(100);if(error){$('#communityGrid').innerHTML='<div class="empty-state">Не удалось загрузить сообщества.</div>';return;}const all=data||[];let memberships=[];if(all.length){const r=await db.from('conversation_members').select('conversation_id').eq('user_id',user.id).in('conversation_id',all.map(c=>c.id));memberships=r.data||[];}const mine=new Set(memberships.map(m=>m.conversation_id));let rows=all;if(communityFilter==='group')rows=rows.filter(c=>c.type==='group');if(communityFilter==='channel')rows=rows.filter(c=>c.type==='channel');if(communityFilter==='mine')rows=rows.filter(c=>mine.has(c.id));$('#communityGrid').innerHTML=rows.length?rows.map(c=>`<article class="community-card"><div class="community-cover">${c.type==='channel'?'▰':'◉'}</div><h3>${safe(c.title||'Сообщество')}</h3><p>${safe(c.description||(c.type==='channel'?'Канал для публикаций и новостей.':'Группа для общения участников.'))}</p><div class="community-meta">${c.type==='channel'?'КАНАЛ':'ГРУППА'} · ${mine.has(c.id)?'ТЫ УЧАСТНИК':'ОТКРЫТОЕ СООБЩЕСТВО'}</div><button class="btn ${mine.has(c.id)?'btn-ghost':'btn-primary'}" data-community-action="${c.id}" data-joined="${mine.has(c.id)}" data-community-type="${c.type}">${mine.has(c.id)?'Открыть':'Присоединиться'}</button></article>`).join(''):'<div class="empty-state">Пока нет сообществ в этой категории. Создай первое ✦</div>';}
+async function communityAction(id,joined,type){if(joined){await openChat(id);navigate('messages');return;}const {error}=await db.rpc('join_public_community',{target_community_id:id});if(error){fail(error,'Не удалось присоединиться к каналу. Проверь SQL-функцию join_public_channel.');return;}toast('Ты присоединился к каналу');await Promise.allSettled([loadCommunities(),loadChats()]);}
+async function createCommunity(e){e.preventDefault();const title=$('#communityTitle').value.trim(),type=$('#communityType').value,description=$('#communityDescription').value.trim();if(title.length<2){toast('Название должно быть не короче 2 символов.',true);return;}try{const {data,error}=await db.rpc('create_community_space_social',{space_title:title,space_type:type,space_description:description});if(error)throw error;toast('Сообщество создано ✦');$('#communityDialog').close();$('#communityForm').reset();await loadCommunities();await loadChats();}catch(err){fail(err,'Не удалось создать сообщество. Проверь функцию create_community_space.');}}
+// Messaging uses the conversation tables from the earlier MilchikTG setup.
+async function loadChats(){const {data:members,error}=await db.from('conversation_members').select('conversation_id, user_id').eq('user_id',user.id);if(error){console.error(error);$('#chatList').innerHTML='<p class="muted pad">Не удалось загрузить переписки.</p>';return;}const ids=(members||[]).map(m=>m.conversation_id);if(!ids.length){chats=[];renderChatList();return;}const [cr,mr]=await Promise.all([db.from('conversations').select('id,type,title,created_by,created_at,updated_at').in('id',ids),db.from('conversation_members').select('conversation_id,user_id').in('conversation_id',ids)]);if(cr.error||mr.error){fail(cr.error||mr.error);return;}const conv=cr.data||[],allMembers=mr.data||[],otherIds=[...new Set(allMembers.filter(m=>m.user_id!==user.id).map(m=>m.user_id))];let profs=[];if(otherIds.length){const r=await db.from('profiles').select('id,display_name,username,avatar_url,bio').in('id',otherIds);profs=r.data||[];}const map=new Map(profs.map(p=>[p.id,p]));const {data:messages}=await db.from('messages').select('conversation_id,content,attachment_type,created_at').in('conversation_id',ids).order('created_at',{ascending:false}).limit(100);const last=new Map();(messages||[]).forEach(m=>{if(!last.has(m.conversation_id))last.set(m.conversation_id,m);});chats=conv.map(c=>{const membersHere=allMembers.filter(m=>m.conversation_id===c.id),peer=map.get(membersHere.find(m=>m.user_id!==user.id)?.user_id)||null;return {...c,peer,last:last.get(c.id),memberCount:membersHere.length};}).sort((a,b)=>new Date(b.last?.created_at||b.created_at)-new Date(a.last?.created_at||a.created_at));renderChatList();}
+function chatTitle(c){return c.type==='direct'?(c.peer?.display_name||'Пользователь'):(c.title|| (c.type==='channel'?'Канал':'Группа'));}function chatSubtitle(c){return c.last?(c.last.attachment_type==='image'?'Фото':c.last.attachment_type==='audio'?'Голосовое сообщение':c.last.content||'Вложение'):c.type==='direct'?'Начни общение':'Новое сообщество';}
+function renderChatList(){const q=($('#chatSearch').value||'').toLowerCase();const rows=chats.filter(c=>chatTitle(c).toLowerCase().includes(q));$('#chatList').innerHTML=rows.length?rows.map(c=>`<button class="chat-list-item ${currentChat?.id===c.id?'active':''}" data-chat-open="${c.id}"><div class="avatar">${safe(initial(chatTitle(c)))}</div><div class="chat-row-copy"><strong>${safe(chatTitle(c))}</strong><span>${safe(chatSubtitle(c))}</span></div></button>`).join(''):'<div class="empty-state">Пока нет переписок.<br>Нажми ＋ и найди человека.</div>';}
+async function startDirect(targetId){try{const {data,error}=await db.rpc('create_direct_conversation',{target_user_id:targetId});if(error)throw error;await loadChats();await openChat(data);navigate('messages');$('.messages-layout').classList.add('chat-open');}catch(err){fail(err,'Не удалось создать переписку. Проверь create_direct_conversation.');}}
+async function openChat(id){const c=chats.find(x=>x.id===id)||{id,type:'group',title:'Сообщество'};currentChat=c;renderChatList();$('#chatWelcome').classList.add('hidden');$('#chatRoom').classList.remove('hidden');$('.messages-layout').classList.add('chat-open');$('#chatPeerName').textContent=chatTitle(c);$('#chatPeerSub').textContent=c.type==='direct'?'Личная переписка':`${c.type==='channel'?'Канал':'Группа'} · ${c.memberCount||1} участник(а)`;setAvatar($('#chatPeerAvatar'),c.peer?.avatar_url,chatTitle(c));$('#chatPeerAvatar').dataset.peerId=c.peer?.id||'';await loadChatMessages();subscribeChat();}
+async function loadChatMessages(){if(!currentChat)return;const {data,error}=await db.from('messages').select('id,conversation_id,sender_id,content,attachment_url,attachment_type,created_at,edited_at,is_pinned').eq('conversation_id',currentChat.id).order('created_at',{ascending:true}).limit(300);if(error){fail(error,'Не удалось загрузить сообщения');return;}chatRows=data||[];const ids=[...new Set(chatRows.map(m=>m.sender_id))];let profs=[];if(ids.length){const r=await db.from('profiles').select('id,display_name,avatar_url').in('id',ids);profs=r.data||[];}const map=new Map(profs.map(p=>[p.id,p]));$('#chatMessages').innerHTML=chatRows.map(m=>{const mine=m.sender_id===user.id;const sender=map.get(m.sender_id)||{display_name:'Пользователь'};let body=m.attachment_type==='image'?`<img class="message-image" src="${safe(m.attachment_url)}" alt="Фото">`:m.attachment_type==='audio'?`<audio class="message-audio" controls src="${safe(m.attachment_url)}"></audio>`:safe(m.content);return `<div class="message-row ${mine?'mine':''}" data-message-row="${m.id}"><div class="message-bubble">${!mine&&currentChat.type!=='direct'?`<small style="color:#c0b6ff">${safe(sender.display_name)}<br></small>`:''}${body}${m.is_pinned?'<small style="display:block;color:#c0b6ff;margin-top:6px">⌖ Закреплено</small>':''}</div><div class="message-meta">${new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}${m.edited_at?' · изменено':''}</div><div class="message-context"><button data-message-action="edit" data-message-id="${m.id}">✎ Редактировать</button><button data-message-action="pin" data-message-id="${m.id}">⌖ Закрепить / открепить</button><button data-message-action="delete" data-message-id="${m.id}">⌫ Удалить</button></div></div>`;}).join('')||'<div class="empty-state">Напиши первое сообщение ✦</div>';$('#chatMessages').scrollTop=$('#chatMessages').scrollHeight;const pinned=chatRows.filter(m=>m.is_pinned);$('#pinnedStrip').classList.toggle('hidden',!pinned.length);$('#pinnedStrip').textContent=pinned.length?'⌖ Закреплено: '+(pinned[0].content|| (pinned[0].attachment_type==='image'?'Фото':'Голосовое сообщение')):'';}
+function subscribeChat(){if(chatChannel)db.removeChannel(chatChannel);if(!currentChat)return;chatChannel=db.channel('mtg-chat-'+currentChat.id).on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:`conversation_id=eq.${currentChat.id}`},async()=>{await loadChatMessages();await loadChats();}).subscribe();}
+async function sendMessage(e){e.preventDefault();if(!currentChat){toast('Сначала выбери переписку.',true);return;}const content=$('#messageText').value.trim(),file=selectedMessageFile;if(!content&&!file)return;const submit=e.submitter;if(submit)submit.disabled=true;try{let attachment_url=null,attachment_type=null;if(file){attachment_url=await uploadFile(file,'chat');attachment_type=file.type.startsWith('image/')?'image':file.type.startsWith('audio/')?'audio':null;if(!attachment_type)throw new Error('Можно отправлять изображения и аудио.');}const {error}=await db.from('messages').insert({conversation_id:currentChat.id,sender_id:user.id,content,attachment_url,attachment_type});if(error)throw error;$('#messageText').value='';$('#messageText').placeholder='Напиши сообщение…';$('#messageText').style.height='auto';selectedMessageFile=null;$('#messageFile').value='';await loadChatMessages();await loadChats();}catch(err){fail(err,'Не удалось отправить сообщение. Проверь таблицу messages и Storage.');}finally{if(submit)submit.disabled=false;}}
+async function messageAction(action,id){const m=chatRows.find(x=>x.id===id);if(!m)return;if(m.sender_id!==user.id){toast('Можно изменять только свои сообщения.',true);return;}try{if(action==='edit'){if(m.attachment_url){toast('Редактирование текста доступно для текстовых сообщений.');return;}const content=prompt('Измени сообщение:',m.content);if(content===null)return;const clean=content.trim();if(!clean){toast('Пустое сообщение нельзя сохранить.',true);return;}const {error}=await db.from('messages').update({content:clean,edited_at:new Date().toISOString()}).eq('id',id).eq('sender_id',user.id);if(error)throw error;}else if(action==='delete'){if(!confirm('Удалить сообщение?'))return;const {error}=await db.from('messages').delete().eq('id',id).eq('sender_id',user.id);if(error)throw error;}else if(action==='pin'){const {error}=await db.from('messages').update({is_pinned:!m.is_pinned}).eq('id',id).eq('sender_id',user.id);if(error)throw error;}await loadChatMessages();}catch(err){fail(err,'Действие с сообщением не удалось.');}}
+async function searchForChat(){const q=prompt('Введи точный никнейм или имя человека:');if(!q)return;const term=q.trim().replace(/^@/,'');const {data,error}=await db.from('profiles').select('id,display_name,username').neq('id',user.id).or(`display_name.ilike.%${term}%,username.ilike.%${term}%`).limit(10);if(error){fail(error);return;}if(!data?.length){toast('Пользователь не найден');return;}if(data.length===1)return startDirect(data[0].id);const choice=prompt('Кого открыть?\n'+data.map((p,i)=>`${i+1}. ${p.display_name} ${p.username?'(@'+p.username+')':''}`).join('\n'));const target=data[Number(choice)-1];if(target)startDirect(target.id);}
+async function attachChatFile(file){if(!file)return;if(!file.type.startsWith('image/')&&!file.type.startsWith('audio/')){toast('Пока доступны фото и аудиофайлы.',true);return;}selectedMessageFile=file;toast(`${file.name} прикреплён. Нажми отправить.`);$('#messageText').placeholder=`Прикреплено: ${file.name}`;}
+async function recordVoice(){if(recordingOn){recording?.stop();return;}if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){toast('Запись голоса не поддерживается этим браузером.',true);return;}try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});const types=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];const mime=types.find(t=>MediaRecorder.isTypeSupported(t));recording=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);recordedChunks=[];recordingOn=true;$('#recordVoiceBtn').textContent='■';$('#recordVoiceBtn').style.color='var(--danger)';recording.ondataavailable=e=>{if(e.data.size)recordedChunks.push(e.data);};recording.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());recordingOn=false;$('#recordVoiceBtn').textContent='♬';$('#recordVoiceBtn').style.color='';const blob=new Blob(recordedChunks,{type:recording.mimeType||'audio/webm'});if(blob.size){const ext=blob.type.includes('mp4')?'mp4':blob.type.includes('ogg')?'ogg':'webm';selectedMessageFile=new File([blob],`voice-${Date.now()}.${ext}`,{type:blob.type});$('#messageText').placeholder='Голосовое готово — нажми отправить';toast('Голосовое записано. Нажми ➤ для отправки.');}};recording.start();toast('Идёт запись. Нажми ■, чтобы закончить.');}catch(err){fail(err,'Нет доступа к микрофону. Разреши его в настройках браузера.');}}
+function subscribeFeed(){db.channel('mtg-feed').on('postgres_changes',{event:'*',schema:'public',table:'posts'},()=>{if(activePage==='home'||activePage==='profile')loadFeed().catch(()=>{});}).subscribe();}
+function applyPrefs(){let p={};try{p=JSON.parse(localStorage.getItem('mtg-prefs')||'{}')}catch{}if(p.accent)document.documentElement.style.setProperty('--accent',p.accent);document.body.classList.toggle('compact',!!p.compact);document.body.classList.toggle('reduce-motion',!!p.motion);$('#accentColor').value=p.accent||'#8b78ff';$('#compactMode').checked=!!p.compact;$('#reducedMotion').checked=!!p.motion;$('#soundEnabled').checked=!!p.sound;$('#discoverable').checked=profile?.is_discoverable??p.discoverable!==false;}
+function savePrefs(kind){const p={accent:$('#accentColor').value,compact:$('#compactMode').checked,motion:$('#reducedMotion').checked,sound:$('#soundEnabled').checked,discoverable:$('#discoverable').checked};localStorage.setItem('mtg-prefs',JSON.stringify(p));applyPrefs();toast('Настройки сохранены');}
+function openSettingsTab(tab){$$('[data-setting]').forEach(b=>b.classList.toggle('active',b.dataset.setting===tab));$$('[data-setting-panel]').forEach(p=>p.classList.toggle('hidden',p.dataset.settingPanel!==tab));}
+async function installApp(){if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;return;}if(/iphone|ipad|ipod/i.test(navigator.userAgent)){toast('В Safari нажми «Поделиться» → «На экран Домой».');}else toast('В меню браузера выбери «Установить MilchikTG» или «Установить приложение».');}
+function wire(){ $$('[data-auth-mode]').forEach(b=>b.addEventListener('click',()=>setAuthMode(b.dataset.authMode)));$('#authForm').addEventListener('submit',authSubmit);$('#forgotBtn').addEventListener('click',async()=>{const email=$('#email').value.trim();if(!email){toast('Сначала введи email.',true);return;}const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)fail(error);else toast('Письмо для сброса пароля отправлено.');});$('#logoutBtn').addEventListener('click',async()=>{if(chatChannel)db.removeChannel(chatChannel);await db.auth.signOut();user=null;profile=null;showAuth();});
+$$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));$('#topProfile').addEventListener('click',()=>navigate('profile'));$('#settingsOpen').addEventListener('click',()=>{$('#settingsDialog').showModal();openSettingsTab('appearance');});$('#postPrompt').addEventListener('click',()=>{$('#postText').classList.remove('hidden');$('#postText').focus();});$('#postText').addEventListener('input',()=>{$('#publishPost').disabled=!$('#postText').value.trim()&&!selectedPostImage;});$('#publishPost').addEventListener('click',publishPost);$('#postImageBtn').addEventListener('click',()=>$('#postImageInput').click());$('#postImageInput').addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;if(!file.type.startsWith('image/'))return toast('Выбери изображение.',true);selectedPostImage=file;$('#postPreview').src=URL.createObjectURL(file);$('#postPreviewWrap').classList.remove('hidden');$('#postText').classList.remove('hidden');$('#publishPost').disabled=false;});$('#clearPostImage').addEventListener('click',()=>{selectedPostImage=null;$('#postImageInput').value='';$('#postPreviewWrap').classList.add('hidden');$('#publishPost').disabled=!$('#postText').value.trim();});$('#moodBtn').addEventListener('click',()=>{const mood=prompt('Добавь настроение или эмодзи:','✨');if(mood){$('#postText').classList.remove('hidden');$('#postText').value+=($('#postText').value?' ':'')+mood;$('#publishPost').disabled=false;}});$('#feedSort').addEventListener('change',renderFeed);
+$('#feedList').addEventListener('click',handlePostClick);$('#profilePosts').addEventListener('click',handlePostClick);function handlePostClick(e){const like=e.target.closest('[data-like]');if(like)return toggleLike(like.dataset.like);const comments=e.target.closest('[data-comments]');if(comments)return openComments(comments.dataset.comments);const save=e.target.closest('[data-save]');if(save)return toggleSave(save.dataset.save);const share=e.target.closest('[data-share]');if(share)return sharePost(share.dataset.share);const menu=e.target.closest('[data-post-menu]');if(menu)return postMenu(menu.dataset.postMenu);const who=e.target.closest('[data-user-open]');if(who)return openUserProfile(who.dataset.userOpen);}
+$('#commentForm').addEventListener('submit',submitComment);$('#editProfileBtn').addEventListener('click',()=>$('#profileDialog').showModal());$('#profileForm').addEventListener('submit',saveProfile);$('#avatarInput').addEventListener('change',e=>uploadAvatar(e.target.files[0]));$('#profileShareBtn').addEventListener('click',async()=>{const url=location.origin+location.pathname+'#profile-'+user.id;try{await navigator.clipboard.writeText(url);toast('Ссылка скопирована');}catch{prompt('Скопируй ссылку',url);}});$$('[data-profile-tab]').forEach(b=>b.addEventListener('click',()=>{profileTab=b.dataset.profileTab;$$('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===b));renderProfilePosts();}));$('#seePeopleBtn').addEventListener('click',()=>navigate('explore'));$('#globalSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){navigate('explore');$('#peopleSearch').value=e.target.value;searchPeople();}});$('#peopleSearch').addEventListener('input',()=>{clearTimeout(exploreTimer);exploreTimer=setTimeout(searchPeople,250);});$('#suggestedPeople').addEventListener('click',handleFollowAndUser);$('#peopleGrid').addEventListener('click',handleFollowAndUser);function handleFollowAndUser(e){const f=e.target.closest('[data-follow]');if(f)return toggleFollow(f.dataset.follow);const u=e.target.closest('[data-user-open]');if(u)return openUserProfile(u.dataset.userOpen);}$('#userFollowBtn').addEventListener('click',()=>toggleFollow($('#userDialog').dataset.userId));$('#userMessageBtn').addEventListener('click',async()=>{const id=$('#userDialog').dataset.userId;$('#userDialog').close();await startDirect(id);});
+$('#createCommunityBtn').addEventListener('click',()=>$('#communityDialog').showModal());$('#createCommunityShortcut').addEventListener('click',()=>$('#communityDialog').showModal());$('#communityForm').addEventListener('submit',createCommunity);$$('[data-community-filter]').forEach(b=>b.addEventListener('click',()=>{communityFilter=b.dataset.communityFilter;$$('[data-community-filter]').forEach(x=>x.classList.toggle('active',x===b));loadCommunities();}));$('#communityGrid').addEventListener('click',e=>{const b=e.target.closest('[data-community-action]');if(b)communityAction(b.dataset.communityAction,b.dataset.joined==='true',b.dataset.communityType);});$('#newChatBtn').addEventListener('click',searchForChat);$('#chatFindPeople').addEventListener('click',searchForChat);$('#chatSearch').addEventListener('input',renderChatList);$('#chatList').addEventListener('click',e=>{const b=e.target.closest('[data-chat-open]');if(b)openChat(b.dataset.chatOpen);});$('#chatBack').addEventListener('click',()=>$('.messages-layout').classList.remove('chat-open'));$('#chatPeerAvatar').addEventListener('click',()=>{if(currentChat?.peer?.id)openUserProfile(currentChat.peer.id);});$('#chatInfoBtn').addEventListener('click',()=>{if(currentChat?.peer?.id)openUserProfile(currentChat.peer.id);else toast(`${chatTitle(currentChat)} · ${currentChat?.memberCount||1} участник(а)`);});$('#messageForm').addEventListener('submit',sendMessage);$('#messageAttachBtn').addEventListener('click',()=>$('#messageFile').click());$('#messageFile').addEventListener('change',e=>attachChatFile(e.target.files[0]));$('#recordVoiceBtn').addEventListener('click',recordVoice);$('#messageText').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#messageForm').requestSubmit();}});$('#messageText').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,120)+'px';});$('#chatMessages').addEventListener('contextmenu',e=>{const row=e.target.closest('[data-message-row]');if(!row)return;e.preventDefault();row.classList.toggle('show-actions');});$('#chatMessages').addEventListener('click',e=>{const act=e.target.closest('[data-message-action]');if(act){e.stopPropagation();messageAction(act.dataset.messageAction,act.dataset.messageId);return;}const row=e.target.closest('[data-message-row]');if(row&&matchMedia('(pointer: coarse)').matches)row.classList.toggle('show-actions');});document.addEventListener('click',e=>{if(!e.target.closest('.message-row'))$$('.message-row.show-actions').forEach(x=>x.classList.remove('show-actions'));});
+$$('[data-setting]').forEach(b=>b.addEventListener('click',()=>openSettingsTab(b.dataset.setting)));$('#saveAppearance').addEventListener('click',savePrefs);$('#savePrivacy').addEventListener('click',savePrefs);$('#saveNotifications').addEventListener('click',savePrefs);$('#installAppBtn').addEventListener('click',installApp);$('#browserNotifications').addEventListener('click',async()=>{if(!('Notification'in window))return toast('Браузерные уведомления не поддерживаются.',true);const p=await Notification.requestPermission();toast(p==='granted'?'Уведомления разрешены':'Разрешение не выдано');});$('#changeProfileFromSettings').addEventListener('click',()=>{$('#settingsDialog').close();$('#profileDialog').showModal();});$('#deleteAccountInfo').addEventListener('click',async()=>{if(confirm('Выйти из MilchikTG?')){await db.auth.signOut();showAuth();}});$('#markNotificationsRead').addEventListener('click',markNotifications);
 }
-function escapeHTML(value = "") {
-  return String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
-function initials(name = "") {
-  return name.trim().split(/\s+/).slice(0, 2).map(part => part[0] || "").join("").toUpperCase() || "?";
-}
-function timeLabel(value) {
-  const date = new Date(value);
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
-  return date.toLocaleDateString([], {day:"2-digit", month:"2-digit"});
-}
-function setMode(mode) {
-  authMode = mode;
-  $("#authForm").classList.remove("hidden");
-  $("#verifyForm").classList.add("hidden");
-  document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
-  $("#nameLabel").classList.toggle("hidden", mode !== "register");
-  $("#authSubmit").textContent = mode === "register" ? "Создать аккаунт" : "Войти";
-  $("#resetPassword").classList.toggle("hidden", mode !== "login");
-  $("#password").autocomplete = mode === "register" ? "new-password" : "current-password";
-}
-function configured() {
-  return CONFIG.SUPABASE_URL.startsWith("https://") &&
-    !CONFIG.SUPABASE_URL.includes("PASTE_") &&
-    CONFIG.SUPABASE_PUBLISHABLE_KEY.length > 20 &&
-    !CONFIG.SUPABASE_PUBLISHABLE_KEY.includes("PASTE_");
-}
-function showApp() {
-  authView.classList.add("hidden");
-  appView.classList.remove("hidden");
-}
-function showAuth() {
-  appView.classList.add("hidden");
-  authView.classList.remove("hidden");
-  currentUser = null;
-  currentProfile = null;
-  currentConversationId = null;
-  currentPeer = null;
-  stopSubscriptions();
-}
-async function loadMyProfile() {
-  const {data, error} = await client.from("profiles").select("id, display_name, bio, avatar_url, created_at").eq("id", currentUser.id).single();
-  if (error) throw error;
-  currentProfile = data;
-  $("#myName").textContent = data.display_name || currentUser.email.split("@")[0];
-  $("#myEmail").textContent = currentUser.email;
-  setAvatar($("#myAvatar"), data.avatar_url, data.display_name || currentUser.email);
-}
-async function refreshConversations() {
-  if (!currentUser) return;
-  const {data: membershipRows, error} = await client
-    .from("conversation_members")
-    .select("conversation_id, conversations(id, created_at, updated_at, type, title)")
-    .eq("user_id", currentUser.id);
-  if (error) { showToast("Не удалось загрузить чаты: " + error.message, true); return; }
-  const ids = (membershipRows || []).map(row => row.conversation_id);
-  if (!ids.length) {
-    conversations = [];
-    renderChatList();
-    return;
-  }
-  const {data: memberRows, error: memberError} = await client
-    .from("conversation_members")
-    .select("conversation_id, user_id, profiles!conversation_members_user_id_fkey(id, display_name, bio, avatar_url)")
-    .in("conversation_id", ids);
-  if (memberError) { showToast("Ошибка загрузки участников: " + memberError.message, true); return; }
-  const {data: messageRows, error: messageError} = await client
-    .from("messages")
-    .select("id, conversation_id, sender_id, content, attachment_url, attachment_type, edited_at, is_pinned, created_at")
-    .in("conversation_id", ids)
-    .order("created_at", {ascending:false});
-  if (messageError) { showToast("Ошибка загрузки сообщений: " + messageError.message, true); return; }
-
-  conversations = ids.map(id => {
-    const membership = membershipRows.find(row => row.conversation_id === id);
-    const members = (memberRows || []).filter(row => row.conversation_id === id);
-    const peerRow = members.find(row => row.user_id !== currentUser.id);
-    const peer = peerRow?.profiles || {id: peerRow?.user_id, display_name:"Пользователь"};
-    const meta = membership?.conversations || {};
-    const latest = (messageRows || []).find(row => row.conversation_id === id);
-    return {id, type:meta.type || "direct", title:meta.title || "", created_at:meta.created_at, updated_at:latest?.created_at || meta.updated_at, peer, latest};
-  }).sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
-  renderChatList();
-}
-function renderChatList() {
-  const list = $("#chatList");
-  const query = $("#chatSearch").value.trim().toLowerCase();
-  const items = conversations.filter(c => {
-    const title = (c.title || c.peer.display_name || "").toLowerCase();
-    const preview = (c.latest?.content || "").toLowerCase();
-    return title.includes(query) || preview.includes(query);
-  });
-  if (!items.length) {
-    list.innerHTML = `<div class="empty-list">${query ? "Ничего не найдено" : "Пока нет чатов.<br>Нажмите «Новый чат», чтобы найти человека."}</div>`;
-    return;
-  }
-  list.innerHTML = items.map(c => {
-    const name = c.title || c.peer.display_name || "Пользователь";
-    const preview = c.latest ? (c.latest.sender_id === currentUser.id ? "Вы: " : "") + (c.latest.attachment_type === "audio" ? "🎙 Голосовое сообщение" : c.latest.attachment_url ? "📷 Фото" : c.latest.content) : (c.type === "channel" ? "Канал" : c.type === "group" ? "Группа" : "Начните общение");
-    return `<button class="chat-item ${c.id === currentConversationId ? "active" : ""}" data-chat-id="${c.id}">
-      <div class="avatar">${c.peer?.avatar_url && c.type === "direct" ? `<img src="${escapeHTML(c.peer.avatar_url)}" alt="">` : escapeHTML(initials(name))}</div>
-      <div class="chat-copy"><div class="chat-topline"><strong>${escapeHTML(name)}</strong><span class="chat-time">${c.latest ? timeLabel(c.latest.created_at) : ""}</span></div>
-      <div class="chat-preview">${escapeHTML(preview)}</div></div></button>`;
-  }).join("");
-  list.querySelectorAll("[data-chat-id]").forEach(button => button.addEventListener("click", () => openConversation(button.dataset.chatId)));
-}
-async function openConversation(id) {
-  const item = conversations.find(c => c.id === id);
-  if (!item) return;
-  currentConversationId = id;
-  currentPeer = item.peer;
-  const chatName = item.title || item.peer.display_name || "Пользователь";
-  $("#peerName").textContent = chatName;
-  $("#peerEmail").textContent = item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : "Личная переписка";
-  setAvatar($("#peerAvatar"), item.type === "direct" ? item.peer?.avatar_url : "", chatName);
-  $("#peerAvatar").style.cursor = item.type === "direct" ? "pointer" : "default";
-  $("#welcome").classList.add("hidden");
-  $("#conversation").classList.remove("hidden");
-  appView.classList.add("chat-open");
-  renderChatList();
-  await loadMessages();
-  subscribeToMessages();
-}
-async function loadMessages() {
-  if (!currentConversationId) return;
-  const {data, error} = await client.from("messages")
-    .select("id, conversation_id, sender_id, content, attachment_url, attachment_type, edited_at, is_pinned, created_at")
-    .eq("conversation_id", currentConversationId)
-    .order("created_at", {ascending:true})
-    .limit(300);
-  if (error) { showToast("Не удалось загрузить сообщения: " + error.message, true); return; }
-  renderMessages(data || []);
-}
-function renderMessages(rows) {
-  messageCache = rows || [];
-  const container = $("#messages");
-  if (!rows.length) {
-    container.innerHTML = '<div class="system-note">Это начало переписки. Напишите первое сообщение.</div>';
-    return;
-  }
-  container.innerHTML = rows.map(m => {
-    const mine = m.sender_id === currentUser.id;
-    const attachment = m.attachment_url ? (m.attachment_type === "audio" ? `<audio class="message-audio" controls preload="metadata" src="${escapeHTML(m.attachment_url)}"></audio>` : `<a href="${escapeHTML(m.attachment_url)}" target="_blank" rel="noopener"><img class="message-image" src="${escapeHTML(m.attachment_url)}" alt="Фото в сообщении" loading="lazy"></a>`) : "";
-    const actions = mine ? `<div class="message-actions"><button data-msg-action="pin" data-msg-id="${m.id}">${m.is_pinned ? "📌 Открепить" : "📌 Закрепить"}</button>${m.content ? `<button data-msg-action="edit" data-msg-id="${m.id}">Изменить</button>` : ""}<button class="message-delete" data-msg-action="delete" data-msg-id="${m.id}">Удалить</button></div>` : "";
-    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? " · Вы" : ""}</div>${actions}</article>`;
-  }).join("");
-  container.querySelectorAll("[data-msg-action]").forEach(button => button.addEventListener("click", () => handleMessageAction(button.dataset.msgAction, button.dataset.msgId)));
-  container.scrollTop = container.scrollHeight;
-}
-async function handleMessageAction(action, id) {
-  const message = messageCache.find(m => String(m.id) === String(id));
-  if (!message || message.sender_id !== currentUser.id) return;
-  if (action === "edit") {
-    const updated = prompt("Изменить сообщение:", message.content || "");
-    if (updated === null) return;
-    const content = updated.trim();
-    if (!content) { showToast("Пустое сообщение нельзя сохранить.", true); return; }
-    const {error} = await client.from("messages").update({content, edited_at:new Date().toISOString()}).eq("id", id).eq("sender_id", currentUser.id);
-    if (error) { showToast("Не удалось изменить сообщение: " + error.message, true); return; }
-  } else if (action === "delete") {
-    if (!confirm("Удалить это сообщение? Это действие нельзя отменить.")) return;
-    const {error} = await client.from("messages").delete().eq("id", id).eq("sender_id", currentUser.id);
-    if (error) { showToast("Не удалось удалить сообщение: " + error.message, true); return; }
-  } else if (action === "pin") {
-    const {error} = await client.from("messages").update({is_pinned:!message.is_pinned}).eq("id", id).eq("sender_id", currentUser.id);
-    if (error) { showToast("Не удалось закрепить сообщение: " + error.message, true); return; }
-  }
-  await loadMessages(); await refreshConversations();
-}
-function setAvatar(element, url, name) {
-  if (!element) return;
-  if (url) element.innerHTML = `<img src="${escapeHTML(url)}" alt="Аватар">`;
-  else element.textContent = initials(name || "?");
-}
-async function showPublicProfile(userId) {
-  if (!userId) return;
-  const {data,error} = await client.from("profiles").select("id, display_name, bio, avatar_url, created_at").eq("id",userId).maybeSingle();
-  if (error || !data) { showToast("Не удалось загрузить профиль.", true); return; }
-  publicProfileTarget = data;
-  setAvatar($("#publicProfileAvatar"), data.avatar_url, data.display_name);
-  $("#publicProfileName").textContent = data.display_name || "Пользователь";
-  $("#publicProfileBio").textContent = data.bio || "Пользователь пока ничего не рассказал о себе.";
-  $("#publicProfileMessageBtn").classList.toggle("hidden", data.id === currentUser.id);
-  $("#publicProfileDialog").showModal();
-}
-async function uploadMedia(file, kind) {
-  if (!file) return null;
-  const maxBytes = (kind === "avatar" ? 5 : 12) * 1024 * 1024;
-  if (file.size > maxBytes) throw new Error(kind === "avatar" ? "Аватар должен быть меньше 5 МБ." : "Файл должен быть меньше 12 МБ.");
-  if (kind !== "voice" && !file.type.startsWith("image/")) throw new Error("Выберите файл изображения.");
-  const safeName = (file.name || (kind === "voice" ? "voice.webm" : "image.jpg")).replace(/[^a-zA-Z0-9._-]/g,"_");
-  const path = `${currentUser.id}/${kind}-${Date.now()}-${safeName}`;
-  const bucket = client.storage.from("milchiktg-media");
-  const {error} = await bucket.upload(path,file,{upsert:false,contentType:(file.type || (kind === "voice" ? "audio/webm" : "image/jpeg")).split(";")[0],cacheControl:"3600"});
-  if (error) throw new Error(error.message + (error.message.toLowerCase().includes("bucket") ? " — проверь, что выполнен единый SQL-файл настройки." : ""));
-  const {data} = bucket.getPublicUrl(path);
-  if (!data?.publicUrl) throw new Error("Не удалось получить ссылку на файл.");
-  return data.publicUrl;
-}
-async function sendAudioBlob(blob) {
-  if (!currentConversationId || !blob) return;
-  if (!blob.size) { showToast("Запись пустая. Попробуй записать ещё раз.", true); return; }
-  try {
-    showToast("Отправляю голосовое сообщение…");
-    const mime = blob.type || "audio/webm";
-    const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : mime.includes("mpeg") ? "mp3" : "webm";
-    const file = new File([blob], `voice-${Date.now()}.${ext}`, {type:mime});
-    const url = await uploadMedia(file,"voice");
-    const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:url,attachment_type:"audio"});
-    if (error) throw error;
-    await loadMessages(); await refreshConversations(); showToast("Голосовое сообщение отправлено.");
-  } catch(error) { showToast("Не удалось отправить голосовое сообщение: " + error.message,true); }
-}
-
-async function sendMessage(event) {
-  event.preventDefault();
-  const content = $("#messageInput").value.trim();
-  if (!content || !currentConversationId) return;
-  const button = $("#sendBtn");
-  button.disabled = true;
-  const {error} = await client.from("messages").insert({
-    conversation_id: currentConversationId,
-    sender_id: currentUser.id,
-    content
-  });
-  button.disabled = false;
-  if (error) { showToast("Сообщение не отправлено: " + error.message, true); return; }
-  $("#messageInput").value = "";
-  $("#messageInput").style.height = "auto";
-  await loadMessages();
-  await refreshConversations();
-}
-function stopSubscriptions() {
-  if (messageChannel && client) client.removeChannel(messageChannel);
-  if (listChannel && client) client.removeChannel(listChannel);
-  messageChannel = null;
-  listChannel = null;
-}
-function subscribeToMessages() {
-  if (messageChannel) client.removeChannel(messageChannel);
-  if (!currentConversationId) return;
-  messageChannel = client.channel("messages-" + currentConversationId)
-    .on("postgres_changes", {event:"*", schema:"public", table:"messages", filter:"conversation_id=eq." + currentConversationId}, async payload => {
-      await loadMessages(); if (payload.eventType === "INSERT" && payload.new.sender_id !== currentUser.id) playMessageSound();
-      await refreshConversations();
-    }).subscribe();
-}
-function subscribeToChatList() {
-  if (listChannel) client.removeChannel(listChannel);
-  listChannel = client.channel("milchiktg-list-" + currentUser.id)
-    .on("postgres_changes", {event:"INSERT", schema:"public", table:"messages"}, () => refreshConversations())
-    .on("postgres_changes", {event:"INSERT", schema:"public", table:"conversation_members", filter:"user_id=eq." + currentUser.id}, () => refreshConversations())
-    .subscribe();
-}
-function openPeopleDialog() {
-  $("#peopleSearch").value = "";
-  $("#peopleResults").innerHTML = '<p class="muted">Введите минимум 2 символа для поиска.</p>';
-  $("#peopleDialog").showModal();
-  setTimeout(() => $("#peopleSearch").focus(), 80);
-}
-async function searchPeople() {
-  const query = $("#peopleSearch").value.trim();
-  const result = $("#peopleResults");
-  if (query.length < 2) {
-    result.innerHTML = '<p class="muted">Введите минимум 2 символа для поиска.</p>';
-    return;
-  }
-  result.innerHTML = '<p class="muted">Поиск…</p>';
-  const {data, error} = await client.from("profiles")
-    .select("id, display_name, bio, avatar_url")
-    .neq("id", currentUser.id)
-    .ilike("display_name", "%" + query.replace(/[%_,]/g, " ") + "%")
-    .order("display_name")
-    .limit(20);
-  if (error) { result.innerHTML = `<p class="muted">Ошибка поиска: ${escapeHTML(error.message)}</p>`; return; }
-  if (!data?.length) {
-    result.innerHTML = '<p class="muted">Никого не нашли. Поиск идёт по отображаемому имени.</p>';
-    return;
-  }
-  result.innerHTML = data.map(person => `<button class="person-result" data-person-id="${person.id}">
-    <div class="avatar">${person.avatar_url ? `<img src="${escapeHTML(person.avatar_url)}" alt="">` : escapeHTML(initials(person.display_name))}</div><div class="person-info"><strong>${escapeHTML(person.display_name || "Пользователь")}</strong><span>${escapeHTML((JSON.parse(localStorage.getItem("milchiktg-prefs")||"{}").bioSearch === false) ? "Пользователь MilchikTG" : (person.bio || "Пользователь MilchikTG"))}</span></div>
-  </button>`).join("");
-  result.querySelectorAll("[data-person-id]").forEach(button => button.addEventListener("click", () => startConversation(button.dataset.personId)));
-}
-async function startConversation(targetId) {
-  const {data, error} = await client.rpc("create_direct_conversation", {target_user_id: targetId});
-  if (error) { showToast("Не удалось создать чат: " + error.message, true); return; }
-  $("#peopleDialog").close();
-  await refreshConversations();
-  await openConversation(data);
-}
-async function saveProfile(event) {
-  event.preventDefault();
-  const display_name = $("#profileName").value.trim();
-  const bio = $("#profileBio").value.trim();
-  if (!display_name) { showToast("Введите отображаемое имя.", true); return; }
-  const {error} = await client.from("profiles").update({display_name, bio}).eq("id", currentUser.id);
-  if (error) { showToast("Не удалось сохранить профиль: " + error.message, true); return; }
-  await loadMyProfile();
-  $("#profileDialog").close();
-  await refreshConversations();
-  showToast("Профиль сохранён.");
-}
-async function handleAuth(event) {
-  event.preventDefault();
-  const email = $("#email").value.trim();
-  const password = $("#password").value;
-  const button = $("#authSubmit");
-  button.disabled = true;
-  try {
-    if (authMode === "register") {
-      const displayName = $("#displayName").value.trim();
-      if (!displayName) throw new Error("Введите имя.");
-      const {data, error} = await client.auth.signUp({email, password, options:{data:{display_name:displayName}, emailRedirectTo: location.origin + location.pathname}});
-      if (error) throw error;
-      if (!data.session) {
-        $("#authForm").classList.add("hidden");
-        $("#verifyForm").classList.remove("hidden");
-        showToast("Письмо отправлено. Открой ссылку в письме для подтверждения.");
-        return;
-      }
-      await enterApp(data.user);
-    } else {
-      const {data, error} = await client.auth.signInWithPassword({email, password});
-      if (error) throw error;
-      await enterApp(data.user);
-    }
-  } catch (error) {
-    showToast(error.message || "Ошибка авторизации.", true);
-  } finally {
-    button.disabled = false;
-  }
-}
-async function enterApp(user) {
-  currentUser = user;
-  showApp();
-  try {
-    await loadMyProfile();
-    await refreshConversations();
-    subscribeToChatList();
-  } catch (error) {
-    showToast("Не удалось загрузить профиль. Выполните SQL-настройку из файла README.", true);
-  }
-}
-function playMessageSound() {
-  let prefs={}; try { prefs=JSON.parse(localStorage.getItem("milchiktg-prefs")||"{}"); } catch {}
-  if (!prefs.sound) return;
-  try { const ctx=new (window.AudioContext||window.webkitAudioContext)(); const osc=ctx.createOscillator(); const gain=ctx.createGain(); osc.frequency.value=740; gain.gain.value=0.035; osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+0.09); osc.onended=()=>ctx.close(); } catch {}
-}
-function applyAppearance(prefs={}) {
-  document.documentElement.style.setProperty("--accent", prefs.accent || "#7c5cff");
-  document.body.classList.toggle("compact-chats", !!prefs.compact);
-  document.body.classList.toggle("reduce-motion", !!prefs.motion);
-}
-function loadAppearanceSettings() {
-  let prefs={}; try { prefs=JSON.parse(localStorage.getItem("milchiktg-prefs")||"{}"); } catch {}
-  $("#accentSetting").value=prefs.accent||"#7c5cff"; $("#compactSetting").checked=!!prefs.compact;
-  $("#motionSetting").checked=!!prefs.motion; $("#soundSetting").checked=!!prefs.sound; $("#bioSearchSetting").checked=prefs.bioSearch!==false;
-  applyAppearance(prefs);
-}
-async function browseChannels() {
-  $("#channelsResults").innerHTML='<p class="muted">Загрузка каналов…</p>'; $("#channelsDialog").showModal();
-  const {data,error}=await client.from("conversations").select("id,title,created_by").eq("type","channel").order("created_at",{ascending:false}).limit(50);
-  if(error){$("#channelsResults").innerHTML=`<p class="muted">Не удалось загрузить каналы. Выполни supabase-upgrade.sql в Supabase.</p>`;return;}
-  if(!data?.length){$("#channelsResults").innerHTML='<p class="muted">Пока нет открытых каналов. Создай первый через кнопку ＋.</p>';return;}
-  const {data:mine}=await client.from("conversation_members").select("conversation_id").eq("user_id",currentUser.id);
-  const joined=new Set((mine||[]).map(x=>x.conversation_id));
-  $("#channelsResults").innerHTML=data.map(ch=>`<div class="channel-result"><div><strong>${escapeHTML(ch.title||"Канал")}</strong><span>Открытый канал</span></div><button class="primary channel-join" data-channel-id="${ch.id}">${joined.has(ch.id)?"Открыть":"Вступить"}</button></div>`).join("");
-  $("#channelsResults").querySelectorAll("[data-channel-id]").forEach(btn=>btn.addEventListener("click",async()=>{
-    const id=btn.dataset.channelId;
-    if(!joined.has(id)){const {error}=await client.rpc("join_public_channel",{target_channel_id:id});if(error){showToast(error.message,true);return;}}
-    $("#channelsDialog").close();await refreshConversations();await openConversation(id);
-  }));
-}
-
-async function init() {
-  document.querySelectorAll("[data-mode]").forEach(btn => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
-  loadAppearanceSettings();
-  if (!configured()) {
-    showToast("Сначала вставьте URL и publishable key Supabase в начало script.js.", true);
-    $("#authSubmit").disabled = true;
-    $("#resetPassword").disabled = true;
-    return;
-  }
-  if (!window.supabase?.createClient) {
-    showToast("Не загрузилась библиотека Supabase. Проверьте интернет и обновите страницу.", true);
-    return;
-  }
-  client = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_PUBLISHABLE_KEY);
-  $("#authForm").addEventListener("submit", handleAuth);
-  $("#verifyForm").addEventListener("submit", event => event.preventDefault());
-  $("#resendLink").addEventListener("click", async () => {
-    const email = $("#email").value.trim();
-    if (!email) { showToast("Введите email на вкладке регистрации.", true); return; }
-    const button = $("#resendLink"); button.disabled = true;
-    try {
-      const {error} = await client.auth.resend({type:"signup", email, options:{emailRedirectTo:location.origin + location.pathname}});
-      if (error) throw error;
-      showToast("Письмо со ссылкой отправлено повторно.");
-    } catch (error) { showToast(error.message || "Не удалось отправить письмо.", true); }
-    finally { button.disabled = false; }
-  });
-  $("#backToAuth").addEventListener("click", () => {
-    $("#verifyForm").classList.add("hidden");
-    $("#authForm").classList.remove("hidden");
-    setMode("login");
-  });
-  $("#resetPassword").addEventListener("click", async () => {
-    const email = $("#email").value.trim();
-    if (!email) { showToast("Сначала введите email.", true); return; }
-    const {error} = await client.auth.resetPasswordForEmail(email, {redirectTo: location.origin + location.pathname});
-    if (error) showToast(error.message, true);
-    else showToast("Если адрес зарегистрирован, письмо для сброса пароля отправлено.");
-  });
-  $("#logoutBtn").addEventListener("click", async () => {
-    stopSubscriptions();
-    const {error} = await client.auth.signOut();
-    if (error) showToast(error.message, true);
-    showAuth();
-  });
-  $("#newChatBtn").addEventListener("click", openPeopleDialog);
-  $("#findPeopleBtn").addEventListener("click", openPeopleDialog);
-  $("#welcomeFindBtn").addEventListener("click", openPeopleDialog);
-  $("#chatSearch").addEventListener("input", renderChatList);
-  $("#peopleSearch").addEventListener("input", () => {
-    clearTimeout(peopleTimer);
-    peopleTimer = setTimeout(searchPeople, 250);
-  });
-  $("#composer").addEventListener("submit", sendMessage);
-  const messagePane = $("#messages");
-  messagePane.addEventListener("contextmenu", event => {
-    const row = event.target.closest(".message-row");
-    if (!row) return;
-    event.preventDefault();
-    messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
-    row.classList.add("show-actions");
-  });
-  messagePane.addEventListener("click", event => {
-    if (event.target.closest("[data-msg-action]") || event.target.closest("a, audio")) return;
-    const row = event.target.closest(".message-row");
-    if (!row) { messagePane.querySelectorAll(".show-actions").forEach(el => el.classList.remove("show-actions")); return; }
-    const wasOpen = row.classList.contains("show-actions");
-    messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
-    if (!wasOpen) row.classList.add("show-actions");
-  });
-  document.addEventListener("click", event => {
-    if (!event.target.closest("#messages")) messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
-  });
-  $("#messageInput").addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      $("#composer").requestSubmit();
-    }
-  });
-  $("#messageInput").addEventListener("input", event => {
-    event.target.style.height = "auto";
-    event.target.style.height = Math.min(event.target.scrollHeight, 140) + "px";
-  });
-  $("#refreshBtn").addEventListener("click", async () => {
-    await loadMessages(); await refreshConversations(); showToast("Обновлено.");
-  });
-  $("#backBtn").addEventListener("click", () => appView.classList.remove("chat-open"));
-  $("#createSpaceBtn").addEventListener("click", () => { $("#spaceTitle").value=""; $("#spaceMembers").value=""; $("#spaceDialog").showModal(); });
-  $("#spaceType").addEventListener("change", () => { $("#spaceMembersLabel").classList.toggle("hidden", $("#spaceType").value === "channel"); });
-  $("#spaceForm").addEventListener("submit", async event => {
-    event.preventDefault();
-    const title = $("#spaceTitle").value.trim(); const type = $("#spaceType").value;
-    let memberIds = [];
-    if (type === "group") {
-      const names = $("#spaceMembers").value.split(",").map(x=>x.trim()).filter(Boolean);
-      for (const name of names) {
-        const {data} = await client.from("profiles").select("id").ilike("display_name", name).limit(1);
-        if (data?.[0]?.id) memberIds.push(data[0].id);
-      }
-    }
-    const {data,error} = await client.rpc("create_community_space", {space_title:title, space_type:type, member_ids:memberIds});
-    if (error) { showToast("Не удалось создать: " + error.message, true); return; }
-    $("#spaceDialog").close(); await refreshConversations(); await openConversation(data); showToast(type === "channel" ? "Канал создан." : "Группа создана.");
-  });
-  $("#browseChannelsBtn").addEventListener("click", browseChannels);
-  $("#attachBtn").addEventListener("click", () => $("#imageInput").click());
-  $("#imageInput").addEventListener("change", async event => {
-    const file = event.target.files?.[0]; event.target.value = "";
-    if (!file || !currentConversationId) return;
-    if (!file.type.startsWith("image/")) { showToast("Выбери изображение.", true); return; }
-    if (file.size > 8*1024*1024) { showToast("Максимальный размер фото — 8 МБ.", true); return; }
-    showToast("Загружаю фото…");
-    let publicUrl; try { publicUrl=await uploadMedia(file,"image"); } catch(uploadError) { showToast("Не удалось загрузить фото: " + uploadError.message,true); return; }
-    const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:publicUrl,attachment_type:"image"});
-    if (error) { showToast("Фото загружено, но не отправлено: "+error.message,true); return; }
-    await loadMessages(); await refreshConversations(); showToast("Фото отправлено.");
-  });
-  $("#chatOptionsBtn").addEventListener("click", () => { if (!currentConversationId) return; const item=conversations.find(c=>c.id===currentConversationId); showToast(item ? `${item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : "Личная переписка"}: ${item.title || item.peer.display_name}` : "Чат"); });
-  $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(btn => btn.addEventListener("click", () => {
-    $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(b=>b.classList.toggle("active",b===btn));
-    $("#settingsDialog").querySelectorAll("[data-settings-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.settingsPanel!==btn.dataset.settingsTab));
-  }));
-  $("#profileBtn").addEventListener("click", () => { loadAppearanceSettings(); $("#settingsDialog").showModal(); });
-  $("#openProfileFromSettings").addEventListener("click", () => {
-    $("#settingsDialog").close(); if (!currentProfile) return;
-    $("#profileName").value=currentProfile.display_name||""; $("#profileBio").value=currentProfile.bio||""; $("#profileEmail").textContent=currentUser.email; setAvatar($("#profileAvatarPreview"),currentProfile.avatar_url,currentProfile.display_name); $("#profileDialog").showModal();
-  });
-  $("#settingsLogoutBtn").addEventListener("click", async () => { $("#settingsDialog").close(); stopSubscriptions(); await client.auth.signOut(); showAuth(); });
-  const savePrefs = () => {
-    const prefs={accent:$("#accentSetting").value,compact:$("#compactSetting").checked,motion:$("#motionSetting").checked,sound:$("#soundSetting").checked,bioSearch:$("#bioSearchSetting").checked};
-    localStorage.setItem("milchiktg-prefs",JSON.stringify(prefs)); applyAppearance(prefs); showToast("Настройки сохранены в этом браузере.");
-  };
-  $("#saveAppearanceBtn").addEventListener("click", savePrefs);
-  $("#savePrivacyBtn").addEventListener("click", savePrefs);
-  $("#saveNotificationsBtn").addEventListener("click", savePrefs);
-  $("#installAppBtn").addEventListener("click", async () => {
-    if (installPromptEvent) {
-      installPromptEvent.prompt();
-      await installPromptEvent.userChoice;
-      installPromptEvent = null;
-    } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-      showToast("На iPhone нажми «Поделиться» в Safari → «На экран Домой».");
-    } else {
-      showToast("Если установка не предлагается: открой меню браузера и выбери «Установить приложение» или «Добавить на главный экран».");
-    }
-  });
-
-  $("#avatarInput").addEventListener("change", async event => {
-    const file=event.target.files?.[0]; event.target.value=""; if(!file) return;
-    if(!file.type.startsWith("image/")){showToast("Выбери изображение.",true);return;}
-    try { const url=await uploadMedia(file,"avatar"); const {error}=await client.from("profiles").update({avatar_url:url}).eq("id",currentUser.id); if(error) throw error; await loadMyProfile(); setAvatar($("#profileAvatarPreview"),url,currentProfile.display_name); await refreshConversations(); showToast("Аватар обновлён."); }
-    catch(error){showToast("Не удалось обновить аватар: "+error.message,true);}
-  });
-  $("#peerAvatar").addEventListener("click",()=>{const item=conversations.find(c=>c.id===currentConversationId);if(item?.type==="direct")showPublicProfile(item.peer?.id);});
-  $("#peerName").addEventListener("click",()=>{const item=conversations.find(c=>c.id===currentConversationId);if(item?.type==="direct")showPublicProfile(item.peer?.id);});
-  $("#publicProfileMessageBtn").addEventListener("click",async()=>{if(!publicProfileTarget)return;const id=publicProfileTarget.id;$("#publicProfileDialog").close();await startConversation(id);});
-  $("#voiceBtn").addEventListener("click", async()=>{
-    if(recording && recording.state==="recording"){recording.stop();$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Обработка голосового сообщения…");return;}
-    if(!currentConversationId){showToast("Сначала открой переписку.",true);return;}
-    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){showToast("Запись голоса не поддерживается. Открой сайт в актуальном браузере по HTTPS.",true);return;}
-    let stream;
-    try {
-      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-      recordedChunks=[];
-      const types=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg;codecs=opus"];
-      const supported=types.find(type=>MediaRecorder.isTypeSupported?.(type));
-      const recorderInstance=supported ? new MediaRecorder(stream,{mimeType:supported}) : new MediaRecorder(stream);
-      recording=recorderInstance;
-      recorderInstance.ondataavailable=e=>{if(e.data?.size)recordedChunks.push(e.data);};
-      recorderInstance.onerror=()=>{stream.getTracks().forEach(t=>t.stop());recording=null;$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Ошибка записи. Проверь доступ к микрофону.",true);};
-      recorderInstance.onstop=async()=>{
-        const mime=recorderInstance.mimeType || recordedChunks[0]?.type || "audio/webm";
-        const blob=new Blob(recordedChunks,{type:mime});
-        stream.getTracks().forEach(t=>t.stop());
-        if(recording===recorderInstance)recording=null;
-        $("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";
-        await sendAudioBlob(blob);
-      };
-      recorderInstance.start(250);
-      $("#voiceBtn").classList.add("recording");$("#voiceBtn").textContent="■";showToast("Запись идёт. Нажми ■, чтобы отправить.");
-    } catch(error){stream?.getTracks().forEach(t=>t.stop());recording=null;$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Не удалось включить микрофон. Разреши доступ в браузере: "+(error.message||"доступ запрещён"),true);}
-  });
-  $("#profileForm").addEventListener("submit", saveProfile);
-  client.auth.onAuthStateChange(async (event, session) => {
-    if (session?.user && !currentUser) await enterApp(session.user);
-    if (event === "SIGNED_OUT") showAuth();
-  });
-  const {data:{session}} = await client.auth.getSession();
-  if (session?.user) await enterApp(session.user);
-}
-let installPromptEvent = null;
-window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); installPromptEvent = event; const button=$("#installAppBtn"); if(button) button.textContent="Установить MilchikTG"; });
-window.addEventListener("appinstalled", () => { installPromptEvent=null; showToast("MilchikTG установлен."); });
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
-}
-
-init();
+async function init(){wire();setAuthMode('login');if(!window.supabase?.createClient){toast('Не удалось загрузить библиотеку Supabase.',true);return;}if(CONFIG.SUPABASE_URL.includes('PASTE_')||CONFIG.SUPABASE_PUBLISHABLE_KEY.includes('PASTE_')){showAuth();toast('Сначала вставь URL и публичный ключ Supabase в script.js.',true);return;}db=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_PUBLISHABLE_KEY);const {data}=await db.auth.getSession();if(data.session){user=data.session.user;await enterApp();}else showAuth();db.auth.onAuthStateChange(async(event,session)=>{if(session?.user&&(!user||user.id!==session.user.id)){user=session.user;await enterApp();}else if(!session?.user&&user){user=null;profile=null;showAuth();}});if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(console.warn);}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;});window.addEventListener('appinstalled',()=>toast('MilchikTG установлен ✦'));document.addEventListener('DOMContentLoaded',init);
