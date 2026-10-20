@@ -31,7 +31,12 @@
         </label>
         <button id="authSubmit" class="primary full" type="submit">Войти</button>
         <button id="resetPassword" class="link-button" type="button">Забыли пароль?</button>
-        <p class="fine muted">Нужен интернет. Данные аккаунта и сообщения хранятся в подключённом проекте Supabase.</p>
+      </form>
+      <form id="verifyForm" class="hidden" novalidate>
+        <h2 class="verify-title">Подтверждение почты</h2>
+        <p class="muted verify-copy">Мы отправили письмо со ссылкой для подтверждения. Открой ссылку в письме, затем вернись сюда и войди в аккаунт.</p>
+        <button id="resendLink" class="primary full" type="button">Отправить письмо ещё раз</button>
+        <button id="backToAuth" class="link-button" type="button">Вернуться ко входу</button>
       </form>
     </section>
   </main>
@@ -48,7 +53,7 @@
       </div>
       <div class="list-head">
         <span>Сообщения</span>
-        <button id="findPeopleBtn" class="subtle-button">Новый чат</button>
+        <div class="list-actions"><button id="findPeopleBtn" class="subtle-button">Новый чат</button><button id="browseChannelsBtn" class="subtle-button">Каналы</button><button id="createSpaceBtn" class="subtle-button" title="Создать группу или канал">＋</button></div>
       </div>
       <div id="chatList" class="chat-list">
         <div class="empty-list">Чаты появятся здесь</div>
@@ -56,7 +61,7 @@
       <footer class="account-footer">
         <div id="myAvatar" class="avatar">M</div>
         <div class="account-copy"><strong id="myName">Профиль</strong><span id="myEmail"></span></div>
-        <button id="profileBtn" class="subtle-button" title="Профиль">⚙</button>
+        <button id="profileBtn" class="subtle-button" title="Настройки">⚙</button>
         <button id="logoutBtn" class="subtle-button" title="Выйти">↪</button>
       </footer>
     </aside>
@@ -76,7 +81,7 @@
             <strong id="peerName">Чат</strong>
             <span id="peerEmail">Личная переписка</span>
           </div>
-          <button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
+          <button id="attachBtn" class="subtle-button" type="button" title="Отправить фото">▧</button><input id="imageInput" type="file" accept="image/*" class="hidden"><button id="chatOptionsBtn" class="subtle-button" type="button" title="Информация о чате">⋯</button><button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
         </header>
         <div id="messages" class="messages">
           <div class="empty-list">Загрузка сообщений…</div>
@@ -92,12 +97,37 @@
 
   <dialog id="peopleDialog" class="dialog">
     <form method="dialog" class="dialog-head">
-      <div><h2>Новый чат</h2><p class="muted">Найдите человека по имени или email.</p></div>
+      <div><h2>Новый чат</h2><p class="muted">Найдите человека по отображаемому имени.</p></div>
       <button class="close-button" aria-label="Закрыть">×</button>
     </form>
     <div class="dialog-body">
       <input id="peopleSearch" class="dialog-search" type="search" placeholder="Введите имя или email">
       <div id="peopleResults" class="people-results"><p class="muted">Начните вводить запрос.</p></div>
+    </div>
+  </dialog>
+
+  <dialog id="channelsDialog" class="dialog">
+    <form method="dialog" class="dialog-head"><div><h2>Открытые каналы</h2><p class="muted">Найдите канал и присоединитесь.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <div class="dialog-body"><div id="channelsResults" class="people-results"><p class="muted">Загрузка каналов…</p></div></div>
+  </dialog>
+
+  <dialog id="spaceDialog" class="dialog">
+    <form method="dialog" class="dialog-head"><div><h2>Создать сообщество</h2><p class="muted">Группа для общения или канал для публикаций.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <form id="spaceForm" class="dialog-body profile-form">
+      <label>Название<input id="spaceTitle" maxlength="60" required placeholder="Например, Друзья"></label>
+      <label>Тип<select id="spaceType"><option value="group">Группа</option><option value="channel">Канал</option></select></label>
+      <label id="spaceMembersLabel">Имена участников (через запятую)<input id="spaceMembers" placeholder="friend@example.com"></label>
+      <button class="primary" type="submit">Создать</button>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="dialog settings-dialog">
+    <form method="dialog" class="dialog-head"><div><h2>Настройки</h2><p class="muted">Персонализируйте MilchikTG.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <div class="settings-layout"><nav class="settings-nav"><button class="settings-tab active" data-settings-tab="account">Аккаунт</button><button class="settings-tab" data-settings-tab="appearance">Оформление</button><button class="settings-tab" data-settings-tab="privacy">Приватность</button><button class="settings-tab" data-settings-tab="notifications">Уведомления</button></nav>
+      <section class="settings-content" data-settings-panel="account"><h3>Аккаунт</h3><p class="muted">Измените имя и описание в своём профиле.</p><button id="openProfileFromSettings" class="primary" type="button">Редактировать профиль</button><hr><button id="settingsLogoutBtn" class="danger-button" type="button">Выйти из аккаунта</button></section>
+      <section class="settings-content hidden" data-settings-panel="appearance"><h3>Оформление</h3><label>Цвет интерфейса<select id="accentSetting"><option value="#7c5cff">Фиолетовый</option><option value="#2f9cf4">Синий</option><option value="#14a878">Зелёный</option><option value="#e36b9a">Розовый</option></select></label><label class="toggle-line">Компактный список чатов<input id="compactSetting" type="checkbox"></label><label class="toggle-line">Уменьшенная анимация<input id="motionSetting" type="checkbox"></label><button id="saveAppearanceBtn" class="primary" type="button">Сохранить оформление</button></section>
+      <section class="settings-content hidden" data-settings-panel="privacy"><h3>Приватность</h3><label class="toggle-line">Показывать описание в поиске<input id="bioSearchSetting" type="checkbox" checked></label><p class="muted small">Эти настройки сохраняются в этом браузере. Настройки не меняют серверные правила доступа.</p><button id="savePrivacyBtn" class="primary" type="button">Сохранить приватность</button></section>
+      <section class="settings-content hidden" data-settings-panel="notifications"><h3>Уведомления</h3><label class="toggle-line">Звуковой сигнал в этой вкладке<input id="soundSetting" type="checkbox"></label><p class="muted small">Звук работает, пока приложение открыто. Уведомления браузера могут требовать отдельного разрешения.</p><button id="saveNotificationsBtn" class="primary" type="button">Сохранить уведомления</button></section>
     </div>
   </dialog>
 
