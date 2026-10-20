@@ -1,8 +1,8 @@
 /* MilchikTG — browser client. Only the Supabase publishable/anon key belongs here.
    Never put a Supabase service_role/secret key in a public website. */
 const CONFIG = {
-  SUPABASE_URL: "PASTE_YOUR_SUPABASE_PROJECT_URL_HERE",
-  SUPABASE_PUBLISHABLE_KEY: "PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE"
+  SUPABASE_URL: "https://rsqcppzdnxghmpcqkcon.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_flV3kJ1AMYglA9Ag0BNdnw_9_0yqzz0"
 };
 
 const $ = (selector) => document.querySelector(selector);
