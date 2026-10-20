@@ -20,6 +20,10 @@ let authMode = "login";
 let conversations = [];
 let peopleTimer = null;
 let toastTimer = null;
+let messageCache = [];
+let recording = null;
+let recordedChunks = [];
+let publicProfileTarget = null;
 
 function showToast(message, error = false) {
   toastEl.textContent = message;
@@ -70,12 +74,12 @@ function showAuth() {
   stopSubscriptions();
 }
 async function loadMyProfile() {
-  const {data, error} = await client.from("profiles").select("id, display_name, bio, created_at").eq("id", currentUser.id).single();
+  const {data, error} = await client.from("profiles").select("id, display_name, bio, avatar_url, created_at").eq("id", currentUser.id).single();
   if (error) throw error;
   currentProfile = data;
   $("#myName").textContent = data.display_name || currentUser.email.split("@")[0];
   $("#myEmail").textContent = currentUser.email;
-  $("#myAvatar").textContent = initials(data.display_name || currentUser.email);
+  setAvatar($("#myAvatar"), data.avatar_url, data.display_name || currentUser.email);
 }
 async function refreshConversations() {
   if (!currentUser) return;
@@ -92,12 +96,12 @@ async function refreshConversations() {
   }
   const {data: memberRows, error: memberError} = await client
     .from("conversation_members")
-    .select("conversation_id, user_id, profiles!conversation_members_user_id_fkey(id, display_name, bio)")
+    .select("conversation_id, user_id, profiles!conversation_members_user_id_fkey(id, display_name, bio, avatar_url)")
     .in("conversation_id", ids);
   if (memberError) { showToast("Ошибка загрузки участников: " + memberError.message, true); return; }
   const {data: messageRows, error: messageError} = await client
     .from("messages")
-    .select("id, conversation_id, sender_id, content, attachment_url, created_at")
+    .select("id, conversation_id, sender_id, content, attachment_url, attachment_type, edited_at, is_pinned, created_at")
     .in("conversation_id", ids)
     .order("created_at", {ascending:false});
   if (messageError) { showToast("Ошибка загрузки сообщений: " + messageError.message, true); return; }
@@ -127,9 +131,9 @@ function renderChatList() {
   }
   list.innerHTML = items.map(c => {
     const name = c.title || c.peer.display_name || "Пользователь";
-    const preview = c.latest ? (c.latest.sender_id === currentUser.id ? "Вы: " : "") + (c.latest.attachment_url ? "📷 Фото" : c.latest.content) : (c.type === "channel" ? "Канал" : c.type === "group" ? "Группа" : "Начните общение");
+    const preview = c.latest ? (c.latest.sender_id === currentUser.id ? "Вы: " : "") + (c.latest.attachment_type === "audio" ? "🎙 Голосовое сообщение" : c.latest.attachment_url ? "📷 Фото" : c.latest.content) : (c.type === "channel" ? "Канал" : c.type === "group" ? "Группа" : "Начните общение");
     return `<button class="chat-item ${c.id === currentConversationId ? "active" : ""}" data-chat-id="${c.id}">
-      <div class="avatar">${escapeHTML(initials(name))}</div>
+      <div class="avatar">${c.peer?.avatar_url && c.type === "direct" ? `<img src="${escapeHTML(c.peer.avatar_url)}" alt="">` : escapeHTML(initials(name))}</div>
       <div class="chat-copy"><div class="chat-topline"><strong>${escapeHTML(name)}</strong><span class="chat-time">${c.latest ? timeLabel(c.latest.created_at) : ""}</span></div>
       <div class="chat-preview">${escapeHTML(preview)}</div></div></button>`;
   }).join("");
@@ -143,7 +147,8 @@ async function openConversation(id) {
   const chatName = item.title || item.peer.display_name || "Пользователь";
   $("#peerName").textContent = chatName;
   $("#peerEmail").textContent = item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : "Личная переписка";
-  $("#peerAvatar").textContent = initials(chatName);
+  setAvatar($("#peerAvatar"), item.type === "direct" ? item.peer?.avatar_url : "", chatName);
+  $("#peerAvatar").style.cursor = item.type === "direct" ? "pointer" : "default";
   $("#welcome").classList.add("hidden");
   $("#conversation").classList.remove("hidden");
   appView.classList.add("chat-open");
@@ -154,7 +159,7 @@ async function openConversation(id) {
 async function loadMessages() {
   if (!currentConversationId) return;
   const {data, error} = await client.from("messages")
-    .select("id, conversation_id, sender_id, content, attachment_url, created_at")
+    .select("id, conversation_id, sender_id, content, attachment_url, attachment_type, edited_at, is_pinned, created_at")
     .eq("conversation_id", currentConversationId)
     .order("created_at", {ascending:true})
     .limit(300);
@@ -162,6 +167,7 @@ async function loadMessages() {
   renderMessages(data || []);
 }
 function renderMessages(rows) {
+  messageCache = rows || [];
   const container = $("#messages");
   if (!rows.length) {
     container.innerHTML = '<div class="system-note">Это начало переписки. Напишите первое сообщение.</div>';
@@ -169,10 +175,69 @@ function renderMessages(rows) {
   }
   container.innerHTML = rows.map(m => {
     const mine = m.sender_id === currentUser.id;
-    return `<article class="message-row ${mine ? "mine" : ""}"><div class="bubble">${m.attachment_url ? `<a href="${escapeHTML(m.attachment_url)}" target="_blank" rel="noopener"><img class="message-image" src="${escapeHTML(m.attachment_url)}" alt="Фото в сообщении" loading="lazy"></a>` : ""}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${mine ? " · Вы" : ""}</div></article>`;
+    const attachment = m.attachment_url ? (m.attachment_type === "audio" ? `<audio class="message-audio" controls preload="metadata" src="${escapeHTML(m.attachment_url)}"></audio>` : `<a href="${escapeHTML(m.attachment_url)}" target="_blank" rel="noopener"><img class="message-image" src="${escapeHTML(m.attachment_url)}" alt="Фото в сообщении" loading="lazy"></a>`) : "";
+    const actions = mine ? `<div class="message-actions"><button data-msg-action="pin" data-msg-id="${m.id}">${m.is_pinned ? "📌 Открепить" : "📌 Закрепить"}</button>${m.content ? `<button data-msg-action="edit" data-msg-id="${m.id}">Изменить</button>` : ""}<button class="message-delete" data-msg-action="delete" data-msg-id="${m.id}">Удалить</button></div>` : "";
+    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? " · Вы" : ""}</div>${actions}</article>`;
   }).join("");
+  container.querySelectorAll("[data-msg-action]").forEach(button => button.addEventListener("click", () => handleMessageAction(button.dataset.msgAction, button.dataset.msgId)));
   container.scrollTop = container.scrollHeight;
 }
+async function handleMessageAction(action, id) {
+  const message = messageCache.find(m => String(m.id) === String(id));
+  if (!message || message.sender_id !== currentUser.id) return;
+  if (action === "edit") {
+    const updated = prompt("Изменить сообщение:", message.content || "");
+    if (updated === null) return;
+    const content = updated.trim();
+    if (!content) { showToast("Пустое сообщение нельзя сохранить.", true); return; }
+    const {error} = await client.from("messages").update({content, edited_at:new Date().toISOString()}).eq("id", id).eq("sender_id", currentUser.id);
+    if (error) { showToast("Не удалось изменить сообщение: " + error.message, true); return; }
+  } else if (action === "delete") {
+    if (!confirm("Удалить это сообщение? Это действие нельзя отменить.")) return;
+    const {error} = await client.from("messages").delete().eq("id", id).eq("sender_id", currentUser.id);
+    if (error) { showToast("Не удалось удалить сообщение: " + error.message, true); return; }
+  } else if (action === "pin") {
+    const {error} = await client.from("messages").update({is_pinned:!message.is_pinned}).eq("id", id).eq("sender_id", currentUser.id);
+    if (error) { showToast("Не удалось закрепить сообщение: " + error.message, true); return; }
+  }
+  await loadMessages(); await refreshConversations();
+}
+function setAvatar(element, url, name) {
+  if (!element) return;
+  if (url) element.innerHTML = `<img src="${escapeHTML(url)}" alt="Аватар">`;
+  else element.textContent = initials(name || "?");
+}
+async function showPublicProfile(userId) {
+  if (!userId) return;
+  const {data,error} = await client.from("profiles").select("id, display_name, bio, avatar_url, created_at").eq("id",userId).maybeSingle();
+  if (error || !data) { showToast("Не удалось загрузить профиль.", true); return; }
+  publicProfileTarget = data;
+  setAvatar($("#publicProfileAvatar"), data.avatar_url, data.display_name);
+  $("#publicProfileName").textContent = data.display_name || "Пользователь";
+  $("#publicProfileBio").textContent = data.bio || "Пользователь пока ничего не рассказал о себе.";
+  $("#publicProfileMessageBtn").classList.toggle("hidden", data.id === currentUser.id);
+  $("#publicProfileDialog").showModal();
+}
+async function uploadMedia(file, kind) {
+  if (!file) return null;
+  if (file.size > (kind === "avatar" ? 5 : 12) * 1024 * 1024) throw new Error(kind === "avatar" ? "Аватар должен быть меньше 5 МБ." : "Файл должен быть меньше 12 МБ.");
+  const path = `${currentUser.id}/${kind}-${Date.now()}-${file.name ? file.name.replace(/[^a-zA-Z0-9._-]/g,"_") : "voice.webm"}`;
+  const {error} = await client.storage.from("milchiktg-media").upload(path,file,{upsert:true,contentType:(file.type || "audio/webm").split(";")[0]});
+  if (error) throw error;
+  return client.storage.from("milchiktg-media").getPublicUrl(path).data.publicUrl;
+}
+async function sendAudioBlob(blob) {
+  if (!currentConversationId || !blob) return;
+  try {
+    showToast("Отправляю голосовое сообщение…");
+    const file = new File([blob], `voice-${Date.now()}.webm`, {type:blob.type || "audio/webm"});
+    const url = await uploadMedia(file,"voice");
+    const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:url,attachment_type:"audio"});
+    if (error) throw error;
+    await loadMessages(); await refreshConversations(); showToast("Голосовое сообщение отправлено.");
+  } catch(error) { showToast("Не удалось отправить голосовое сообщение: " + error.message,true); }
+}
+
 async function sendMessage(event) {
   event.preventDefault();
   const content = $("#messageInput").value.trim();
@@ -201,8 +266,8 @@ function subscribeToMessages() {
   if (messageChannel) client.removeChannel(messageChannel);
   if (!currentConversationId) return;
   messageChannel = client.channel("messages-" + currentConversationId)
-    .on("postgres_changes", {event:"INSERT", schema:"public", table:"messages", filter:"conversation_id=eq." + currentConversationId}, async payload => {
-      if (payload.new.sender_id !== currentUser.id) { await loadMessages(); playMessageSound(); }
+    .on("postgres_changes", {event:"*", schema:"public", table:"messages", filter:"conversation_id=eq." + currentConversationId}, async payload => {
+      await loadMessages(); if (payload.eventType === "INSERT" && payload.new.sender_id !== currentUser.id) playMessageSound();
       await refreshConversations();
     }).subscribe();
 }
@@ -228,7 +293,7 @@ async function searchPeople() {
   }
   result.innerHTML = '<p class="muted">Поиск…</p>';
   const {data, error} = await client.from("profiles")
-    .select("id, display_name, bio")
+    .select("id, display_name, bio, avatar_url")
     .neq("id", currentUser.id)
     .ilike("display_name", "%" + query.replace(/[%_,]/g, " ") + "%")
     .order("display_name")
@@ -239,7 +304,7 @@ async function searchPeople() {
     return;
   }
   result.innerHTML = data.map(person => `<button class="person-result" data-person-id="${person.id}">
-    <div class="avatar">${escapeHTML(initials(person.display_name))}</div><div class="person-info"><strong>${escapeHTML(person.display_name || "Пользователь")}</strong><span>${escapeHTML((JSON.parse(localStorage.getItem("milchiktg-prefs")||"{}").bioSearch === false) ? "Пользователь MilchikTG" : (person.bio || "Пользователь MilchikTG"))}</span></div>
+    <div class="avatar">${person.avatar_url ? `<img src="${escapeHTML(person.avatar_url)}" alt="">` : escapeHTML(initials(person.display_name))}</div><div class="person-info"><strong>${escapeHTML(person.display_name || "Пользователь")}</strong><span>${escapeHTML((JSON.parse(localStorage.getItem("milchiktg-prefs")||"{}").bioSearch === false) ? "Пользователь MilchikTG" : (person.bio || "Пользователь MilchikTG"))}</span></div>
   </button>`).join("");
   result.querySelectorAll("[data-person-id]").forEach(button => button.addEventListener("click", () => startConversation(button.dataset.personId)));
 }
@@ -427,11 +492,8 @@ async function init() {
     if (!file.type.startsWith("image/")) { showToast("Выбери изображение.", true); return; }
     if (file.size > 8*1024*1024) { showToast("Максимальный размер фото — 8 МБ.", true); return; }
     showToast("Загружаю фото…");
-    const path = `${currentUser.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
-    const {error:uploadError} = await client.storage.from("milchiktg-media").upload(path,file,{upsert:false,contentType:file.type});
-    if (uploadError) { showToast("Не удалось загрузить фото. Выполни supabase-upgrade.sql: " + uploadError.message,true); return; }
-    const {data:urlData} = client.storage.from("milchiktg-media").getPublicUrl(path);
-    const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:urlData.publicUrl});
+    let publicUrl; try { publicUrl=await uploadMedia(file,"image"); } catch(uploadError) { showToast("Не удалось загрузить фото: " + uploadError.message,true); return; }
+    const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:publicUrl,attachment_type:"image"});
     if (error) { showToast("Фото загружено, но не отправлено: "+error.message,true); return; }
     await loadMessages(); await refreshConversations(); showToast("Фото отправлено.");
   });
@@ -443,7 +505,7 @@ async function init() {
   $("#profileBtn").addEventListener("click", () => { loadAppearanceSettings(); $("#settingsDialog").showModal(); });
   $("#openProfileFromSettings").addEventListener("click", () => {
     $("#settingsDialog").close(); if (!currentProfile) return;
-    $("#profileName").value=currentProfile.display_name||""; $("#profileBio").value=currentProfile.bio||""; $("#profileEmail").textContent=currentUser.email; $("#profileDialog").showModal();
+    $("#profileName").value=currentProfile.display_name||""; $("#profileBio").value=currentProfile.bio||""; $("#profileEmail").textContent=currentUser.email; setAvatar($("#profileAvatarPreview"),currentProfile.avatar_url,currentProfile.display_name); $("#profileDialog").showModal();
   });
   $("#settingsLogoutBtn").addEventListener("click", async () => { $("#settingsDialog").close(); stopSubscriptions(); await client.auth.signOut(); showAuth(); });
   const savePrefs = () => {
@@ -454,6 +516,21 @@ async function init() {
   $("#savePrivacyBtn").addEventListener("click", savePrefs);
   $("#saveNotificationsBtn").addEventListener("click", savePrefs);
 
+  $("#avatarInput").addEventListener("change", async event => {
+    const file=event.target.files?.[0]; event.target.value=""; if(!file) return;
+    if(!file.type.startsWith("image/")){showToast("Выбери изображение.",true);return;}
+    try { const url=await uploadMedia(file,"avatar"); const {error}=await client.from("profiles").update({avatar_url:url}).eq("id",currentUser.id); if(error) throw error; await loadMyProfile(); setAvatar($("#profileAvatarPreview"),url,currentProfile.display_name); await refreshConversations(); showToast("Аватар обновлён."); }
+    catch(error){showToast("Не удалось обновить аватар: "+error.message,true);}
+  });
+  $("#peerAvatar").addEventListener("click",()=>{const item=conversations.find(c=>c.id===currentConversationId);if(item?.type==="direct")showPublicProfile(item.peer?.id);});
+  $("#peerName").addEventListener("click",()=>{const item=conversations.find(c=>c.id===currentConversationId);if(item?.type==="direct")showPublicProfile(item.peer?.id);});
+  $("#publicProfileMessageBtn").addEventListener("click",async()=>{if(!publicProfileTarget)return;const id=publicProfileTarget.id;$("#publicProfileDialog").close();await startConversation(id);});
+  $("#voiceBtn").addEventListener("click", async()=>{
+    if(recording && recording.state==="recording"){recording.stop();$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Обработка голосового сообщения…");return;}
+    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){showToast("Запись голоса не поддерживается этим браузером.",true);return;}
+    try { const stream=await navigator.mediaDevices.getUserMedia({audio:true}); recordedChunks=[]; recording=new MediaRecorder(stream); recording.ondataavailable=e=>{if(e.data.size)recordedChunks.push(e.data);}; recording.onstop=async()=>{const blob=new Blob(recordedChunks,{type:recording.mimeType||"audio/webm"});stream.getTracks().forEach(t=>t.stop());recording=null;await sendAudioBlob(blob);}; recording.start(); $("#voiceBtn").classList.add("recording");$("#voiceBtn").textContent="■";showToast("Запись идёт. Нажми ■, чтобы отправить."); }
+    catch(error){showToast("Нет доступа к микрофону. Разреши его в браузере.",true);}
+  });
   $("#profileForm").addEventListener("submit", saveProfile);
   client.auth.onAuthStateChange(async (event, session) => {
     if (session?.user && !currentUser) await enterApp(session.user);

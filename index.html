@@ -81,14 +81,15 @@
             <strong id="peerName">Чат</strong>
             <span id="peerEmail">Личная переписка</span>
           </div>
-          <button id="attachBtn" class="subtle-button" type="button" title="Отправить фото">▧</button><input id="imageInput" type="file" accept="image/*" class="hidden"><button id="chatOptionsBtn" class="subtle-button" type="button" title="Информация о чате">⋯</button><button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
+          <button id="chatOptionsBtn" class="subtle-button" type="button" title="Информация о чате">⋯</button><button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
         </header>
         <div id="messages" class="messages">
           <div class="empty-list">Загрузка сообщений…</div>
         </div>
         <form id="composer" class="composer">
+          <button id="attachBtn" class="composer-tool" type="button" title="Прикрепить фото" aria-label="Прикрепить фото">＋</button><input id="imageInput" type="file" accept="image/*" class="hidden">
           <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Напишите сообщение…" aria-label="Сообщение"></textarea>
-          <button id="sendBtn" class="send-button" type="submit" aria-label="Отправить">➤</button>
+          <button id="voiceBtn" class="composer-tool" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button><button id="sendBtn" class="send-button" type="submit" aria-label="Отправить">➤</button>
         </form>
         <div class="composer-note">Enter — отправить · Shift+Enter — новая строка</div>
       </section>
@@ -137,6 +138,7 @@
       <button class="close-button" aria-label="Закрыть">×</button>
     </form>
     <form id="profileForm" class="dialog-body profile-form">
+      <div class="avatar-editor"><div id="profileAvatarPreview" class="avatar avatar-large">M</div><label class="avatar-upload-label">Фото профиля<input id="avatarInput" type="file" accept="image/*"></label></div>
       <label>Отображаемое имя
         <input id="profileName" maxlength="40" required>
       </label>
@@ -146,6 +148,11 @@
       <p id="profileEmail" class="muted small"></p>
       <button class="primary" type="submit">Сохранить изменения</button>
     </form>
+  </dialog>
+
+  <dialog id="publicProfileDialog" class="dialog public-profile-dialog">
+    <form method="dialog" class="dialog-head"><div><h2>Профиль пользователя</h2><p class="muted">Информация об аккаунте</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <div class="dialog-body public-profile-body"><div id="publicProfileAvatar" class="avatar avatar-large">?</div><h3 id="publicProfileName">Пользователь</h3><p id="publicProfileBio" class="muted">Нет описания</p><button id="publicProfileMessageBtn" class="primary" type="button">Написать сообщение</button></div>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
