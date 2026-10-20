@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101114">
+  <meta name="description" content="MilchikTG — мессенджер для общения">
+  <title>MilchikTG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <main id="authView" class="auth-view">
+    <section class="auth-card">
+      <h1>MilchikTG</h1>
+      <p class="muted">Общение без лишнего</p>
+      <div class="auth-tabs">
+        <button class="tab active" data-mode="login">Войти</button>
+        <button class="tab" data-mode="register">Создать аккаунт</button>
+      </div>
+      <form id="authForm">
+        <label id="nameLabel" class="hidden">Имя
+          <input id="displayName" type="text" maxlength="40" autocomplete="name" placeholder="Как вас зовут?">
+        </label>
+        <label>Email
+          <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+        </label>
+        <label>Пароль
+          <input id="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Не менее 8 символов">
+        </label>
+        <button id="authSubmit" class="primary full" type="submit">Войти</button>
+        <button id="resetPassword" class="link-button" type="button">Забыли пароль?</button>
+        <p class="fine muted">Нужен интернет. Данные аккаунта и сообщения хранятся в подключённом проекте Supabase.</p>
+      </form>
+    </section>
+  </main>
+
+  <main id="appView" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <header class="sidebar-head">
+        <div class="wordmark">MilchikTG</div>
+        <button id="newChatBtn" class="round-button" title="Найти пользователя" aria-label="Найти пользователя">＋</button>
+      </header>
+      <div class="search-box">
+        <span aria-hidden="true">⌕</span>
+        <input id="chatSearch" type="search" placeholder="Поиск чатов">
+      </div>
+      <div class="list-head">
+        <span>Сообщения</span>
+        <button id="findPeopleBtn" class="subtle-button">Новый чат</button>
+      </div>
+      <div id="chatList" class="chat-list">
+        <div class="empty-list">Чаты появятся здесь</div>
+      </div>
+      <footer class="account-footer">
+        <div id="myAvatar" class="avatar">M</div>
+        <div class="account-copy"><strong id="myName">Профиль</strong><span id="myEmail"></span></div>
+        <button id="profileBtn" class="subtle-button" title="Профиль">⚙</button>
+        <button id="logoutBtn" class="subtle-button" title="Выйти">↪</button>
+      </footer>
+    </aside>
+
+    <section class="chat-area">
+      <div id="welcome" class="welcome">
+        <h2>MilchikTG</h2>
+        <p>Выберите переписку или найдите пользователя, чтобы начать общение.</p>
+        <button id="welcomeFindBtn" class="primary">Найти пользователя</button>
+      </div>
+
+      <section id="conversation" class="conversation hidden">
+        <header class="chat-header">
+          <button id="backBtn" class="round-button back-button" aria-label="Назад">‹</button>
+          <div id="peerAvatar" class="avatar">?</div>
+          <div class="peer-copy">
+            <strong id="peerName">Чат</strong>
+            <span id="peerEmail">Личная переписка</span>
+          </div>
+          <button id="refreshBtn" class="subtle-button" title="Обновить сообщения">↻</button>
+        </header>
+        <div id="messages" class="messages">
+          <div class="empty-list">Загрузка сообщений…</div>
+        </div>
+        <form id="composer" class="composer">
+          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Напишите сообщение…" aria-label="Сообщение"></textarea>
+          <button id="sendBtn" class="send-button" type="submit" aria-label="Отправить">➤</button>
+        </form>
+        <div class="composer-note">Enter — отправить · Shift+Enter — новая строка</div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="peopleDialog" class="dialog">
+    <form method="dialog" class="dialog-head">
+      <div><h2>Новый чат</h2><p class="muted">Найдите человека по имени или email.</p></div>
+      <button class="close-button" aria-label="Закрыть">×</button>
+    </form>
+    <div class="dialog-body">
+      <input id="peopleSearch" class="dialog-search" type="search" placeholder="Введите имя или email">
+      <div id="peopleResults" class="people-results"><p class="muted">Начните вводить запрос.</p></div>
+    </div>
+  </dialog>
+
+  <dialog id="profileDialog" class="dialog">
+    <form method="dialog" class="dialog-head">
+      <div><h2>Профиль</h2><p class="muted">Настройки вашего аккаунта.</p></div>
+      <button class="close-button" aria-label="Закрыть">×</button>
+    </form>
+    <form id="profileForm" class="dialog-body profile-form">
+      <label>Отображаемое имя
+        <input id="profileName" maxlength="40" required>
+      </label>
+      <label>О себе
+        <textarea id="profileBio" maxlength="180" rows="3" placeholder="Коротко о себе"></textarea>
+      </label>
+      <p id="profileEmail" class="muted small"></p>
+      <button class="primary" type="submit">Сохранить изменения</button>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
+</body>
+</html>
