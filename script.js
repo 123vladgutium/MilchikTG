@@ -1,8 +1,8 @@
 /* MilchikTG — browser client. Only the Supabase publishable/anon key belongs here.
    Never put a Supabase service_role/secret key in a public website. */
 const CONFIG = {
-  SUPABASE_URL: "https://rsqcppzdnxghmpcqkcon.supabase.co",
-  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_flV3kJ1AMYglA9Ag0BNdnw_9_0yqzz0"
+  SUPABASE_URL: "PASTE_YOUR_SUPABASE_PROJECT_URL_HERE",
+  SUPABASE_PUBLISHABLE_KEY: "PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE"
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -220,17 +220,26 @@ async function showPublicProfile(userId) {
 }
 async function uploadMedia(file, kind) {
   if (!file) return null;
-  if (file.size > (kind === "avatar" ? 5 : 12) * 1024 * 1024) throw new Error(kind === "avatar" ? "Аватар должен быть меньше 5 МБ." : "Файл должен быть меньше 12 МБ.");
-  const path = `${currentUser.id}/${kind}-${Date.now()}-${file.name ? file.name.replace(/[^a-zA-Z0-9._-]/g,"_") : "voice.webm"}`;
-  const {error} = await client.storage.from("milchiktg-media").upload(path,file,{upsert:true,contentType:(file.type || "audio/webm").split(";")[0]});
-  if (error) throw error;
-  return client.storage.from("milchiktg-media").getPublicUrl(path).data.publicUrl;
+  const maxBytes = (kind === "avatar" ? 5 : 12) * 1024 * 1024;
+  if (file.size > maxBytes) throw new Error(kind === "avatar" ? "Аватар должен быть меньше 5 МБ." : "Файл должен быть меньше 12 МБ.");
+  if (kind !== "voice" && !file.type.startsWith("image/")) throw new Error("Выберите файл изображения.");
+  const safeName = (file.name || (kind === "voice" ? "voice.webm" : "image.jpg")).replace(/[^a-zA-Z0-9._-]/g,"_");
+  const path = `${currentUser.id}/${kind}-${Date.now()}-${safeName}`;
+  const bucket = client.storage.from("milchiktg-media");
+  const {error} = await bucket.upload(path,file,{upsert:false,contentType:(file.type || (kind === "voice" ? "audio/webm" : "image/jpeg")).split(";")[0],cacheControl:"3600"});
+  if (error) throw new Error(error.message + (error.message.toLowerCase().includes("bucket") ? " — проверь, что выполнен единый SQL-файл настройки." : ""));
+  const {data} = bucket.getPublicUrl(path);
+  if (!data?.publicUrl) throw new Error("Не удалось получить ссылку на файл.");
+  return data.publicUrl;
 }
 async function sendAudioBlob(blob) {
   if (!currentConversationId || !blob) return;
+  if (!blob.size) { showToast("Запись пустая. Попробуй записать ещё раз.", true); return; }
   try {
     showToast("Отправляю голосовое сообщение…");
-    const file = new File([blob], `voice-${Date.now()}.webm`, {type:blob.type || "audio/webm"});
+    const mime = blob.type || "audio/webm";
+    const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : mime.includes("mpeg") ? "mp3" : "webm";
+    const file = new File([blob], `voice-${Date.now()}.${ext}`, {type:mime});
     const url = await uploadMedia(file,"voice");
     const {error} = await client.from("messages").insert({conversation_id:currentConversationId,sender_id:currentUser.id,content:"",attachment_url:url,attachment_type:"audio"});
     if (error) throw error;
@@ -453,6 +462,25 @@ async function init() {
     peopleTimer = setTimeout(searchPeople, 250);
   });
   $("#composer").addEventListener("submit", sendMessage);
+  const messagePane = $("#messages");
+  messagePane.addEventListener("contextmenu", event => {
+    const row = event.target.closest(".message-row");
+    if (!row) return;
+    event.preventDefault();
+    messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
+    row.classList.add("show-actions");
+  });
+  messagePane.addEventListener("click", event => {
+    if (event.target.closest("[data-msg-action]") || event.target.closest("a, audio")) return;
+    const row = event.target.closest(".message-row");
+    if (!row) { messagePane.querySelectorAll(".show-actions").forEach(el => el.classList.remove("show-actions")); return; }
+    const wasOpen = row.classList.contains("show-actions");
+    messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
+    if (!wasOpen) row.classList.add("show-actions");
+  });
+  document.addEventListener("click", event => {
+    if (!event.target.closest("#messages")) messagePane.querySelectorAll(".message-row.show-actions").forEach(el => el.classList.remove("show-actions"));
+  });
   $("#messageInput").addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -515,6 +543,17 @@ async function init() {
   $("#saveAppearanceBtn").addEventListener("click", savePrefs);
   $("#savePrivacyBtn").addEventListener("click", savePrefs);
   $("#saveNotificationsBtn").addEventListener("click", savePrefs);
+  $("#installAppBtn").addEventListener("click", async () => {
+    if (installPromptEvent) {
+      installPromptEvent.prompt();
+      await installPromptEvent.userChoice;
+      installPromptEvent = null;
+    } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      showToast("На iPhone нажми «Поделиться» в Safari → «На экран Домой».");
+    } else {
+      showToast("Если установка не предлагается: открой меню браузера и выбери «Установить приложение» или «Добавить на главный экран».");
+    }
+  });
 
   $("#avatarInput").addEventListener("change", async event => {
     const file=event.target.files?.[0]; event.target.value=""; if(!file) return;
@@ -527,9 +566,29 @@ async function init() {
   $("#publicProfileMessageBtn").addEventListener("click",async()=>{if(!publicProfileTarget)return;const id=publicProfileTarget.id;$("#publicProfileDialog").close();await startConversation(id);});
   $("#voiceBtn").addEventListener("click", async()=>{
     if(recording && recording.state==="recording"){recording.stop();$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Обработка голосового сообщения…");return;}
-    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){showToast("Запись голоса не поддерживается этим браузером.",true);return;}
-    try { const stream=await navigator.mediaDevices.getUserMedia({audio:true}); recordedChunks=[]; recording=new MediaRecorder(stream); recording.ondataavailable=e=>{if(e.data.size)recordedChunks.push(e.data);}; recording.onstop=async()=>{const blob=new Blob(recordedChunks,{type:recording.mimeType||"audio/webm"});stream.getTracks().forEach(t=>t.stop());recording=null;await sendAudioBlob(blob);}; recording.start(); $("#voiceBtn").classList.add("recording");$("#voiceBtn").textContent="■";showToast("Запись идёт. Нажми ■, чтобы отправить."); }
-    catch(error){showToast("Нет доступа к микрофону. Разреши его в браузере.",true);}
+    if(!currentConversationId){showToast("Сначала открой переписку.",true);return;}
+    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){showToast("Запись голоса не поддерживается. Открой сайт в актуальном браузере по HTTPS.",true);return;}
+    let stream;
+    try {
+      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+      recordedChunks=[];
+      const types=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg;codecs=opus"];
+      const supported=types.find(type=>MediaRecorder.isTypeSupported?.(type));
+      const recorderInstance=supported ? new MediaRecorder(stream,{mimeType:supported}) : new MediaRecorder(stream);
+      recording=recorderInstance;
+      recorderInstance.ondataavailable=e=>{if(e.data?.size)recordedChunks.push(e.data);};
+      recorderInstance.onerror=()=>{stream.getTracks().forEach(t=>t.stop());recording=null;$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Ошибка записи. Проверь доступ к микрофону.",true);};
+      recorderInstance.onstop=async()=>{
+        const mime=recorderInstance.mimeType || recordedChunks[0]?.type || "audio/webm";
+        const blob=new Blob(recordedChunks,{type:mime});
+        stream.getTracks().forEach(t=>t.stop());
+        if(recording===recorderInstance)recording=null;
+        $("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";
+        await sendAudioBlob(blob);
+      };
+      recorderInstance.start(250);
+      $("#voiceBtn").classList.add("recording");$("#voiceBtn").textContent="■";showToast("Запись идёт. Нажми ■, чтобы отправить.");
+    } catch(error){stream?.getTracks().forEach(t=>t.stop());recording=null;$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Не удалось включить микрофон. Разреши доступ в браузере: "+(error.message||"доступ запрещён"),true);}
   });
   $("#profileForm").addEventListener("submit", saveProfile);
   client.auth.onAuthStateChange(async (event, session) => {
@@ -539,4 +598,11 @@ async function init() {
   const {data:{session}} = await client.auth.getSession();
   if (session?.user) await enterApp(session.user);
 }
+let installPromptEvent = null;
+window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); installPromptEvent = event; const button=$("#installAppBtn"); if(button) button.textContent="Установить MilchikTG"; });
+window.addEventListener("appinstalled", () => { installPromptEvent=null; showToast("MilchikTG установлен."); });
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+}
+
 init();

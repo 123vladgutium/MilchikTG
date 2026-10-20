@@ -33,3 +33,14 @@ select{display:block;width:100%;margin-top:8px;padding:12px 14px;border:1px soli
 /* Profile photos, message controls and voice notes */
 .avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-large{width:88px;height:88px;flex-basis:88px;font-size:26px}.composer-tool{height:46px;min-width:44px;border:1px solid var(--border);border-radius:14px;background:var(--panel2);color:var(--text);font-size:19px;display:grid;place-items:center}.composer-tool:hover{border-color:var(--accent);background:#29243d}.composer-tool.recording{background:#7e2938;border-color:#ff6478;animation:pulse-record 1s infinite}.avatar-editor{display:flex;align-items:center;gap:18px;margin:4px 0 18px}.avatar-upload-label{flex:1}.avatar-upload-label input{padding:8px}.public-profile-body{text-align:center;padding-top:4px}.public-profile-body .avatar{margin:0 auto 14px}.public-profile-body h3{margin:0 0 8px}.public-profile-body p{line-height:1.55;overflow-wrap:anywhere}.public-profile-body .primary{margin-top:10px}.message-actions{display:flex;gap:4px;flex-wrap:wrap;margin:4px 4px 0;opacity:.7}.message-row:hover .message-actions{opacity:1}.message-actions button{border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);padding:4px 7px;font-size:10px}.message-actions button:hover{color:var(--text);border-color:var(--accent)}.message-actions .message-delete:hover{border-color:#8d3945;color:#ff9ba4}.pinned-message .bubble{border-color:#b59cff;box-shadow:0 0 0 1px #7c5cff33}.pinned-label{font-size:10px;color:#d2c6ff;margin-bottom:6px}.message-audio{display:block;width:min(60vw,320px);max-width:100%;height:40px;margin:2px 0}.message-row.mine .message-actions{justify-content:flex-end}@keyframes pulse-record{50%{box-shadow:0 0 0 5px #ff647833}}
 @media(max-width:760px){.composer{gap:6px}.composer-tool{min-width:39px;width:39px}.composer textarea{padding:12px 10px}.message-actions{opacity:1}}
+
+/* Advanced message interactions and install experience */
+.message-actions{display:none;opacity:1;flex-wrap:wrap;padding:5px;background:rgba(20,20,25,.96);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 25px #0004;max-width:min(78vw,440px)}
+.message-row.show-actions .message-actions{display:flex}
+.message-row{touch-action:pan-y}
+.message-row.show-actions .bubble{outline:1px solid color-mix(in srgb,var(--accent) 45%,transparent)}
+.chat-header .peer-copy{cursor:pointer}
+.chat-header .avatar{cursor:pointer}
+#installAppBtn{margin-top:6px}
+.chat-item .avatar img,.person-result .avatar img{width:100%;height:100%;object-fit:cover}
+@media(max-width:760px){.message-actions button{font-size:12px;padding:8px 10px}.composer-note{font-size:9px}.message-row.show-actions .message-actions{max-width:92vw}}

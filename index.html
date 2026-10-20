@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101114">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <meta name="description" content="MilchikTG — мессенджер для общения">
   <title>MilchikTG</title>
   <link rel="stylesheet" href="style.css">
@@ -91,7 +95,7 @@
           <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Напишите сообщение…" aria-label="Сообщение"></textarea>
           <button id="voiceBtn" class="composer-tool" type="button" title="Записать голосовое сообщение" aria-label="Записать голосовое сообщение">🎙</button><button id="sendBtn" class="send-button" type="submit" aria-label="Отправить">➤</button>
         </form>
-        <div class="composer-note">Enter — отправить · Shift+Enter — новая строка</div>
+        <div class="composer-note">Enter — отправить · Shift+Enter — новая строка · ПК: правая кнопка по сообщению · телефон: нажмите на сообщение</div>
       </section>
     </section>
   </main>
@@ -126,7 +130,7 @@
     <form method="dialog" class="dialog-head"><div><h2>Настройки</h2><p class="muted">Персонализируйте MilchikTG.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
     <div class="settings-layout"><nav class="settings-nav"><button class="settings-tab active" data-settings-tab="account">Аккаунт</button><button class="settings-tab" data-settings-tab="appearance">Оформление</button><button class="settings-tab" data-settings-tab="privacy">Приватность</button><button class="settings-tab" data-settings-tab="notifications">Уведомления</button></nav>
       <section class="settings-content" data-settings-panel="account"><h3>Аккаунт</h3><p class="muted">Измените имя и описание в своём профиле.</p><button id="openProfileFromSettings" class="primary" type="button">Редактировать профиль</button><hr><button id="settingsLogoutBtn" class="danger-button" type="button">Выйти из аккаунта</button></section>
-      <section class="settings-content hidden" data-settings-panel="appearance"><h3>Оформление</h3><label>Цвет интерфейса<select id="accentSetting"><option value="#7c5cff">Фиолетовый</option><option value="#2f9cf4">Синий</option><option value="#14a878">Зелёный</option><option value="#e36b9a">Розовый</option></select></label><label class="toggle-line">Компактный список чатов<input id="compactSetting" type="checkbox"></label><label class="toggle-line">Уменьшенная анимация<input id="motionSetting" type="checkbox"></label><button id="saveAppearanceBtn" class="primary" type="button">Сохранить оформление</button></section>
+      <section class="settings-content hidden" data-settings-panel="appearance"><h3>Оформление</h3><label>Цвет интерфейса<select id="accentSetting"><option value="#7c5cff">Фиолетовый</option><option value="#2f9cf4">Синий</option><option value="#14a878">Зелёный</option><option value="#e36b9a">Розовый</option></select></label><label class="toggle-line">Компактный список чатов<input id="compactSetting" type="checkbox"></label><label class="toggle-line">Уменьшенная анимация<input id="motionSetting" type="checkbox"></label><button id="saveAppearanceBtn" class="primary" type="button">Сохранить оформление</button><hr><h3>Установка приложения</h3><p class="muted">Добавьте MilchikTG на главный экран телефона или на рабочий стол компьютера.</p><button id="installAppBtn" class="primary" type="button">Установить MilchikTG</button></section>
       <section class="settings-content hidden" data-settings-panel="privacy"><h3>Приватность</h3><label class="toggle-line">Показывать описание в поиске<input id="bioSearchSetting" type="checkbox" checked></label><p class="muted small">Эти настройки сохраняются в этом браузере. Настройки не меняют серверные правила доступа.</p><button id="savePrivacyBtn" class="primary" type="button">Сохранить приватность</button></section>
       <section class="settings-content hidden" data-settings-panel="notifications"><h3>Уведомления</h3><label class="toggle-line">Звуковой сигнал в этой вкладке<input id="soundSetting" type="checkbox"></label><p class="muted small">Звук работает, пока приложение открыто. Уведомления браузера могут требовать отдельного разрешения.</p><button id="saveNotificationsBtn" class="primary" type="button">Сохранить уведомления</button></section>
     </div>
