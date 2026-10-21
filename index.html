@@ -17,22 +17,26 @@
 
   <main id="authView" class="auth-view">
     <section class="auth-card">
-      <h1>MilchikTG</h1>
-      <p class="muted">Общение без лишнего</p>
+      <div class="auth-brand"><div class="brand-symbol">M</div><div><h1>MilchikTG</h1><p class="muted">Твоё пространство для общения</p></div></div>
+      <div class="auth-intro"><span class="auth-pill">✦ ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</span><h2 id="authHeadline">Рады видеть тебя снова</h2><p id="authSubheadline">Продолжай общение там, где остановился.</p></div>
       <div class="auth-tabs">
         <button class="tab active" data-mode="login">Войти</button>
         <button class="tab" data-mode="register">Создать аккаунт</button>
       </div>
       <form id="authForm">
-        <label id="nameLabel" class="hidden">Имя
-          <input id="displayName" type="text" maxlength="40" autocomplete="name" placeholder="Как вас зовут?">
+        <label id="nameLabel" class="hidden">Как к тебе обращаться?
+          <input id="displayName" type="text" maxlength="40" autocomplete="name" placeholder="Например, Влад">
         </label>
         <label>Email
           <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
         </label>
         <label>Пароль
-          <input id="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Не менее 8 символов">
+          <div class="password-wrap"><input id="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Не менее 8 символов"><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Показать пароль">Показать</button></div>
         </label>
+        <label id="confirmPasswordLabel" class="hidden">Повтори пароль
+          <div class="password-wrap"><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Введи пароль ещё раз"><button class="password-toggle" type="button" data-password-toggle="confirmPassword" aria-label="Показать пароль">Показать</button></div>
+        </label>
+        <div id="passwordStrength" class="password-strength hidden"><div class="strength-track"><span id="strengthBar"></span></div><small id="strengthText">Надёжность пароля</small></div>
         <button id="authSubmit" class="primary full" type="submit">Войти</button>
         <button id="resetPassword" class="link-button" type="button">Забыли пароль?</button>
       </form>

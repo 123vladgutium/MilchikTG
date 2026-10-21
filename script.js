@@ -51,6 +51,10 @@ function setMode(mode) {
   $("#verifyForm").classList.add("hidden");
   document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
   $("#nameLabel").classList.toggle("hidden", mode !== "register");
+  $("#confirmPasswordLabel").classList.toggle("hidden", mode !== "register");
+  $("#passwordStrength").classList.toggle("hidden", mode !== "register");
+  $("#authHeadline").textContent = mode === "register" ? "Создадим твой аккаунт" : "Рады видеть тебя снова";
+  $("#authSubheadline").textContent = mode === "register" ? "Пара простых шагов — и можно общаться." : "Продолжай общение там, где остановился.";
   $("#authSubmit").textContent = mode === "register" ? "Создать аккаунт" : "Войти";
   $("#resetPassword").classList.toggle("hidden", mode !== "login");
   $("#password").autocomplete = mode === "register" ? "new-password" : "current-password";
@@ -416,7 +420,10 @@ async function handleAuth(event) {
   try {
     if (authMode === "register") {
       const displayName = $("#displayName").value.trim();
+      const confirmPassword = $("#confirmPassword").value;
       if (!displayName) throw new Error("Введите имя.");
+      if (password.length < 8) throw new Error("Пароль должен содержать минимум 8 символов.");
+      if (password !== confirmPassword) throw new Error("Пароли не совпадают.");
       const {data, error} = await client.auth.signUp({email, password, options:{data:{display_name:displayName}, emailRedirectTo: location.origin + location.pathname}});
       if (error) throw error;
       if (!data.session) {
@@ -579,7 +586,36 @@ async function init() {
   $("#refreshBtn").addEventListener("click", async () => {
     await loadMessages(); await refreshConversations(); showToast("Обновлено.");
   });
-  $("#backBtn").addEventListener("click", () => appView.classList.remove("chat-open"));
+  const closeMobileChat = () => {
+    appView.classList.remove("chat-open");
+    $("#conversation").classList.add("hidden");
+    $("#welcome").classList.remove("hidden");
+    currentConversationId = null;
+    currentPeer = null;
+    if (messageChannel) { client.removeChannel(messageChannel); messageChannel = null; }
+    renderChatList();
+  };
+  $("#backBtn").addEventListener("click", closeMobileChat);
+  document.addEventListener("keydown", event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#chatSearch").focus(); }
+    if (event.key === "Escape" && window.matchMedia("(max-width: 760px)").matches && appView.classList.contains("chat-open") && ![...document.querySelectorAll("dialog[open]")].length) closeMobileChat();
+  });
+  document.querySelectorAll("[data-password-toggle]").forEach(button => button.addEventListener("click", () => {
+    const input = $("#" + button.dataset.passwordToggle); const visible = input.type === "text";
+    input.type = visible ? "password" : "text"; button.textContent = visible ? "Показать" : "Скрыть";
+    button.setAttribute("aria-label", visible ? "Показать пароль" : "Скрыть пароль");
+  }));
+  $("#password").addEventListener("input", () => {
+    if (authMode !== "register") return;
+    const value = $("#password").value; let score = 0;
+    if (value.length >= 8) score++; if (value.length >= 12) score++;
+    if (/[A-ZА-Я]/.test(value) && /[a-zа-я]/.test(value)) score++;
+    if (/\d/.test(value)) score++; if (/[^A-Za-zА-Яа-я0-9]/.test(value)) score++;
+    const labels = ["Добавь символы для надёжности", "Слабый", "Нормальный", "Хороший", "Надёжный", "Очень надёжный"];
+    $("#strengthBar").style.width = (score * 20) + "%";
+    $("#strengthBar").dataset.level = score;
+    $("#strengthText").textContent = value ? labels[score] : "Надёжность пароля";
+  });
   $("#createSpaceBtn").addEventListener("click", () => { $("#spaceTitle").value=""; $("#spaceMembers").value=""; $("#spaceDialog").showModal(); });
   $("#spaceType").addEventListener("change", () => { $("#spaceMembersLabel").classList.toggle("hidden", $("#spaceType").value === "channel"); });
   $("#spaceForm").addEventListener("submit", async event => {
