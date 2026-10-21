@@ -146,6 +146,10 @@
       <label>Отображаемое имя
         <input id="profileName" maxlength="40" required>
       </label>
+      <label>Уникальный юзернейм
+        <input id="profileUsername" maxlength="24" minlength="3" pattern="[A-Za-z0-9_]{3,24}" autocomplete="off" placeholder="например, test" required>
+        <small class="muted">3–24 символа: латинские буквы, цифры и _. Юзернейм должен быть уникальным.</small>
+      </label>
       <label>О себе
         <textarea id="profileBio" maxlength="180" rows="3" placeholder="Коротко о себе"></textarea>
       </label>
@@ -156,9 +160,13 @@
 
   <dialog id="publicProfileDialog" class="dialog public-profile-dialog">
     <form method="dialog" class="dialog-head"><div><h2>Профиль пользователя</h2><p class="muted">Информация об аккаунте</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
-    <div class="dialog-body public-profile-body"><div id="publicProfileAvatar" class="avatar avatar-large">?</div><h3 id="publicProfileName">Пользователь</h3><p id="publicProfileBio" class="muted">Нет описания</p><button id="publicProfileMessageBtn" class="primary" type="button">Написать сообщение</button></div>
+    <div class="dialog-body public-profile-body"><div id="publicProfileAvatar" class="avatar avatar-large">?</div><h3 id="publicProfileName">Пользователь</h3><p id="publicProfileUsername" class="profile-username-label"></p><p id="publicProfileBio" class="muted">Нет описания</p><button id="publicProfileMessageBtn" class="primary" type="button">Написать сообщение</button></div>
   </dialog>
 
+  <dialog id="imageLightbox" class="image-lightbox">
+    <button id="imageLightboxClose" class="lightbox-close" type="button" aria-label="Закрыть">×</button>
+    <img id="imageLightboxImg" alt="Полноразмерное фото">
+  </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="script.js"></script>
 </body>
