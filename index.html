@@ -10,7 +10,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <meta name="description" content="MilchikTG — мессенджер для общения">
   <title>MilchikTG</title>
-  <link rel="stylesheet" href="style.css?v=4.0">
+  <link rel="stylesheet" href="style.css?v=4.1-dark-workspace">
 </head>
 <body>
   <div id="toast" class="toast hidden" role="status"></div>
@@ -18,7 +18,7 @@
   <main id="authView" class="auth-view">
     <section class="auth-card">
       <div class="auth-brand"><div class="brand-symbol">M</div><div><h1>MilchikTG</h1><p class="muted">Твоё пространство для общения</p></div></div>
-      <div class="auth-intro"><span class="auth-pill">✦ ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</span><h2 id="authHeadline">Рады видеть тебя снова</h2><p id="authSubheadline">Продолжай общение там, где остановился.</p></div>
+      <div class="auth-intro"><h2 id="authHeadline">Вход в MilchikTG</h2><p id="authSubheadline">Общайтесь с людьми и следите за любимыми каналами.</p></div>
       <div class="auth-tabs">
         <button class="tab active" data-mode="login">Войти</button>
         <button class="tab" data-mode="register">Создать аккаунт</button>
@@ -63,6 +63,12 @@
         <span>Сообщения</span>
         <div class="list-actions"><button id="findPeopleBtn" class="subtle-button">Новый чат</button><button id="browseChannelsBtn" class="subtle-button">Каналы</button><button id="createSpaceBtn" class="subtle-button" title="Создать группу или канал">＋</button></div>
       </div>
+      <nav class="chat-filters" aria-label="Фильтр переписок">
+        <button class="chat-filter active" type="button" data-chat-filter="all">Все</button>
+        <button class="chat-filter" type="button" data-chat-filter="direct">Личные</button>
+        <button class="chat-filter" type="button" data-chat-filter="group">Группы</button>
+        <button class="chat-filter" type="button" data-chat-filter="channel">Каналы</button>
+      </nav>
       <div id="chatList" class="chat-list">
         <div class="empty-list">Чаты появятся здесь</div>
       </div>
@@ -72,6 +78,12 @@
         <button id="profileBtn" class="subtle-button" title="Настройки">⚙</button>
         <button id="logoutBtn" class="subtle-button" title="Выйти">↪</button>
       </footer>
+      <nav class="mobile-nav" aria-label="Основная навигация">
+        <button class="mobile-nav-item active" type="button" data-mobile-nav="chats"><span>▤</span><small>Чаты</small></button>
+        <button class="mobile-nav-item" id="mobilePeopleBtn" type="button" data-mobile-nav="people"><span>♙</span><small>Люди</small></button>
+        <button class="mobile-nav-item" id="mobileChannelsBtn" type="button" data-mobile-nav="channels"><span>◉</span><small>Каналы</small></button>
+        <button class="mobile-nav-item" id="mobileProfileBtn" type="button" data-mobile-nav="profile"><span>⚙</span><small>Профиль</small></button>
+      </nav>
     </aside>
 
     <section class="chat-area">
@@ -191,6 +203,6 @@
     <img id="imageLightboxImg" alt="Полноразмерное фото">
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="script.js?v=4.0"></script>
+  <script src="script.js?v=4.1-dark-workspace"></script>
 </body>
 </html>

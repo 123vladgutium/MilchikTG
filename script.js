@@ -27,6 +27,7 @@ let publicProfileTarget = null;
 let listRefreshTimer = null;
 let channelCommentCounts = new Map();
 let activeCommentPost = null;
+let activeChatFilter = "all";
 
 function showToast(message, error = false) {
   toastEl.textContent = message;
@@ -145,6 +146,8 @@ function renderChatList() {
   const list = $("#chatList");
   const query = $("#chatSearch").value.trim().toLowerCase();
   const items = conversations.filter(c => {
+    const matchesFilter = activeChatFilter === "all" || c.type === activeChatFilter;
+    if (!matchesFilter) return false;
     const title = (c.title || c.peer.display_name || "").toLowerCase() + " " + (c.peer?.username || "").toLowerCase();
     const preview = (c.latest?.content || "").toLowerCase();
     return title.includes(query) || preview.includes(query);
@@ -709,6 +712,17 @@ async function init() {
     await refreshConversations(); showToast("Фото отправлено.");
   });
   $("#chatOptionsBtn").addEventListener("click", () => { if (!currentConversationId) return; const item=conversations.find(c=>c.id===currentConversationId); if(item?.type==="direct") showPublicProfile(item.peer?.id); else openCommunityManager(currentConversationId); });
+  document.querySelectorAll("[data-chat-filter]").forEach(button => button.addEventListener("click", () => {
+    activeChatFilter = button.dataset.chatFilter;
+    document.querySelectorAll("[data-chat-filter]").forEach(item => item.classList.toggle("active", item === button));
+    renderChatList();
+  }));
+  $("#mobilePeopleBtn")?.addEventListener("click", () => { $("#peopleDialog").showModal(); $("#peopleSearch").focus(); });
+  $("#mobileChannelsBtn")?.addEventListener("click", () => { $("#channelsDialog").showModal(); loadPublicChannels(); });
+  $("#mobileProfileBtn")?.addEventListener("click", () => { loadAppearanceSettings(); $("#settingsDialog").showModal(); });
+  document.querySelectorAll("[data-mobile-nav]").forEach(button => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-mobile-nav]").forEach(item => item.classList.toggle("active", item === button));
+  }));
   $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(btn => btn.addEventListener("click", () => {
     $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(b=>b.classList.toggle("active",b===btn));
     $("#settingsDialog").querySelectorAll("[data-settings-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.settingsPanel!==btn.dataset.settingsTab));

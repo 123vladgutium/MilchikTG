@@ -1,4 +1,4 @@
-const CACHE_NAME = 'milchiktg-shell-v4';
+const CACHE_NAME = 'milchiktg-v4-1-dark-workspace';
 const SHELL = ['./','./index.html','./style.css?v=4.0','./script.js?v=4.0','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).catch(()=>{})); self.skipWaiting(); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))).then(()=>self.clients.claim())); });
