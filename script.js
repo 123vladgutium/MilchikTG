@@ -25,6 +25,8 @@ let recording = null;
 let recordedChunks = [];
 let publicProfileTarget = null;
 let listRefreshTimer = null;
+let channelCommentCounts = new Map();
+let activeCommentPost = null;
 
 function showToast(message, error = false) {
   toastEl.textContent = message;
@@ -53,8 +55,8 @@ function setMode(mode) {
   $("#nameLabel").classList.toggle("hidden", mode !== "register");
   $("#confirmPasswordLabel").classList.toggle("hidden", mode !== "register");
   $("#passwordStrength").classList.toggle("hidden", mode !== "register");
-  $("#authHeadline").textContent = mode === "register" ? "Создадим твой аккаунт" : "Рады видеть тебя снова";
-  $("#authSubheadline").textContent = mode === "register" ? "Пара простых шагов — и можно общаться." : "Продолжай общение там, где остановился.";
+  $("#authHeadline").textContent = mode === "register" ? "Создай аккаунт" : "С возвращением";
+  $("#authSubheadline").textContent = mode === "register" ? "Заполни поля ниже, чтобы начать общаться." : "Войди, чтобы продолжить переписки.";
   $("#authSubmit").textContent = mode === "register" ? "Создать аккаунт" : "Войти";
   $("#resetPassword").classList.toggle("hidden", mode !== "login");
   $("#password").autocomplete = mode === "register" ? "new-password" : "current-password";
@@ -91,7 +93,7 @@ async function refreshConversations() {
   if (!currentUser) return;
   const {data: membershipRows, error} = await client
     .from("conversation_members")
-    .select("conversation_id, conversations(id, created_at, updated_at, type, title)")
+    .select("conversation_id, conversations(id, created_at, updated_at, type, title, description, avatar_url, linked_group_id, created_by)")
     .eq("user_id", currentUser.id);
   if (error) { showToast("Не удалось загрузить чаты: " + error.message, true); return; }
   const ids = (membershipRows || []).map(row => row.conversation_id);
@@ -102,7 +104,7 @@ async function refreshConversations() {
   }
   const {data: memberRows, error: memberError} = await client
     .from("conversation_members")
-    .select("conversation_id, user_id, profiles!conversation_members_user_profile_fkey(id, display_name, username, bio, avatar_url)")
+    .select("conversation_id, user_id, role, profiles!conversation_members_user_profile_fkey(id, display_name, username, bio, avatar_url)")
     .in("conversation_id", ids);
   if (memberError) { showToast("Ошибка загрузки участников: " + memberError.message, true); return; }
   const {data: messageRows, error: messageError} = await client
@@ -135,7 +137,7 @@ async function refreshConversations() {
     const unread = chatMessages.filter(row => row.sender_id !== currentUser.id && !readsByMessage.get(String(row.id))?.has(currentUser.id)).length;
     if (id === currentConversationId) localStorage.setItem(`milchiktg-unread-${id}`, "0");
     else localStorage.setItem(`milchiktg-unread-${id}`, String(unread));
-    return {id, type:meta.type || "direct", title:meta.title || "", created_at:meta.created_at, updated_at:latest?.created_at || meta.updated_at, peer, latest, unread, readsByMessage};
+    return {id, type:meta.type || "direct", title:meta.title || "", description:meta.description || "", avatar_url:meta.avatar_url || "", linked_group_id:meta.linked_group_id || null, created_by:meta.created_by || null, members, myRole:members.find(m=>m.user_id===currentUser.id)?.role || "member", created_at:meta.created_at, updated_at:latest?.created_at || meta.updated_at, peer, latest, unread, readsByMessage};
   }).sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
   renderChatList();
 }
@@ -155,7 +157,7 @@ function renderChatList() {
     const name = c.title || c.peer.display_name || "Пользователь";
     const preview = c.latest ? (c.latest.sender_id === currentUser.id ? "Вы: " : "") + (c.latest.attachment_type === "audio" ? "🎙 Голосовое сообщение" : c.latest.attachment_url ? "📷 Фото" : c.latest.content) : (c.type === "channel" ? "Канал" : c.type === "group" ? "Группа" : "Начните общение");
     return `<button class="chat-item ${c.id === currentConversationId ? "active" : ""}" data-chat-id="${c.id}">
-      <div class="avatar">${c.peer?.avatar_url && c.type === "direct" ? `<img src="${escapeHTML(c.peer.avatar_url)}" alt="">` : escapeHTML(initials(name))}</div>
+      <div class="avatar">${(c.type === "direct" ? c.peer?.avatar_url : c.avatar_url) ? `<img src="${escapeHTML(c.type === "direct" ? c.peer.avatar_url : c.avatar_url)}" alt="">` : escapeHTML(initials(name))}</div>
       <div class="chat-copy"><div class="chat-topline"><strong>${escapeHTML(name)}</strong><span class="chat-time">${c.latest ? timeLabel(c.latest.created_at) : ""}</span></div>
       <div class="chat-preview">${escapeHTML(preview)}</div></div>${c.unread > 0 && c.id !== currentConversationId ? `<span class="unread-badge" title="${c.unread} новое сообщение" aria-label="${c.unread} непрочитанных сообщений">${c.unread > 99 ? "99+" : c.unread}</span>` : ""}</button>`;
   }).join("");
@@ -168,8 +170,8 @@ async function openConversation(id) {
   currentPeer = item.peer;
   const chatName = item.title || item.peer.display_name || "Пользователь";
   $("#peerName").textContent = chatName;
-  $("#peerEmail").textContent = item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : (item.peer?.username ? "@" + item.peer.username + " · личная переписка" : "Личная переписка");
-  setAvatar($("#peerAvatar"), item.type === "direct" ? item.peer?.avatar_url : "", chatName);
+  $("#peerEmail").textContent = item.type === "channel" ? (item.description || "Канал · публикации и статистика") : item.type === "group" ? (item.description || `Группа · ${item.members?.length || 0} участников`) : (item.peer?.username ? "@" + item.peer.username + " · личная переписка" : "Личная переписка");
+  setAvatar($("#peerAvatar"), item.type === "direct" ? item.peer?.avatar_url : item.avatar_url, chatName);
   $("#peerAvatar").style.cursor = item.type === "direct" ? "pointer" : "default";
   $("#welcome").classList.add("hidden");
   $("#conversation").classList.remove("hidden");
@@ -188,10 +190,18 @@ async function loadMessages() {
     .limit(300);
   if (error) { showToast("Не удалось загрузить сообщения: " + error.message, true); return; }
   let receipts = [];
-  const ids = (data || []).filter(m => m.sender_id === currentUser.id).map(m => m.id);
+  const ids = (data || []).map(m => m.id);
+  const activeItem = conversations.find(c => c.id === currentConversationId);
   if (ids.length) {
-    const readResult = await client.from("message_reads").select("message_id,user_id,read_at").in("message_id", ids).neq("user_id", currentUser.id);
+    let readQuery = client.from("message_reads").select("message_id,user_id,read_at").in("message_id", ids);
+    if (activeItem?.type !== "channel") readQuery = readQuery.neq("user_id", currentUser.id);
+    const readResult = await readQuery;
     if (!readResult.error) receipts = readResult.data || [];
+  }
+  channelCommentCounts = new Map();
+  if (activeItem?.type === "channel" && ids.length) {
+    const commentsResult = await client.from("channel_comments").select("post_id").in("post_id", ids);
+    if (!commentsResult.error) for (const row of commentsResult.data || []) channelCommentCounts.set(String(row.post_id),(channelCommentCounts.get(String(row.post_id))||0)+1);
   }
   renderMessages(data || [], receipts);
 }
@@ -234,10 +244,14 @@ function renderMessages(rows, receipts = []) {
     const attachment = m.attachment_url ? (m.attachment_type === "audio" ? `<audio class="message-audio" controls preload="none" playsinline src="${escapeHTML(m.attachment_url)}"></audio><a class="audio-open-link" href="${escapeHTML(m.attachment_url)}" target="_blank" rel="noopener">Открыть аудио отдельно</a>` : `<button class="image-preview-button" type="button" data-view-image="${escapeHTML(m.attachment_url)}" aria-label="Открыть фото"><img class="message-image" src="${escapeHTML(m.attachment_url)}" alt="Фото в сообщении" loading="lazy"></button>`) : "";
     const actions = mine ? `<div class="message-actions"><button data-msg-action="pin" data-msg-id="${m.id}">${m.is_pinned ? "📌 Открепить" : "📌 Закрепить"}</button>${m.content ? `<button data-msg-action="edit" data-msg-id="${m.id}">Изменить</button>` : ""}<button class="message-delete" data-msg-action="delete" data-msg-id="${m.id}">Удалить</button></div>` : "";
     const seen = mine && receipts.some(r => String(r.message_id) === String(m.id));
+    const views = receipts.filter(r => String(r.message_id) === String(m.id)).length;
     const fresh = Date.now() - new Date(m.created_at).getTime() < 2500;
-    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""} ${fresh ? "message-arrival" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? ` · ${seen ? "✓✓ Прочитано" : "✓ Отправлено"}` : ""}</div>${actions}</article>`;
+    const activeItem = conversations.find(c => c.id === currentConversationId);
+    const postTools = activeItem?.type === "channel" ? `<div class="post-stats"><span title="Уникальные участники, открывшие пост">◉ ${views} прочитали</span>${activeItem.linked_group_id ? `<button type="button" data-post-comments="${escapeHTML(m.id)}" data-post-channel="${escapeHTML(activeItem.id)}">💬 ${channelCommentCounts.get(String(m.id))||0} комментариев</button>` : `<span class="muted">Комментарии не подключены</span>`}</div>` : "";
+    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""} ${fresh ? "message-arrival" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? ` · ${seen ? "✓✓ Прочитано" : "✓ Отправлено"}` : ""}</div>${postTools}${actions}</article>`;
   }).join("");
   container.querySelectorAll("[data-msg-action]").forEach(button => button.addEventListener("click", () => handleMessageAction(button.dataset.msgAction, button.dataset.msgId)));
+  container.querySelectorAll("[data-post-comments]").forEach(button => button.addEventListener("click", async () => openPostComments(button.dataset.postChannel,button.dataset.postComments)));
   container.scrollTop = container.scrollHeight;
 }
 async function handleMessageAction(action, id) {
@@ -475,6 +489,49 @@ function loadAppearanceSettings() {
   $("#motionSetting").checked=!!prefs.motion; $("#soundSetting").checked=!!prefs.sound; $("#bioSearchSetting").checked=prefs.bioSearch!==false;
   applyAppearance(prefs);
 }
+async function openPostComments(channelId,postId) {
+  const {error:joinError}=await client.rpc("join_linked_discussion",{target_channel_id:channelId});
+  if(joinError){showToast("Не удалось открыть обсуждение: "+joinError.message,true);return;}
+  activeCommentPost={channelId,postId};
+  $("#commentsSubtitle").textContent="Загрузка комментариев…";
+  $("#postCommentsList").innerHTML='<p class="muted">Загрузка комментариев…</p>';
+  $("#postCommentInput").value=""; $("#postCommentsDialog").showModal();
+  await loadPostComments();
+}
+async function loadPostComments() {
+  if(!activeCommentPost)return;
+  const {data,error}=await client.from("channel_comments").select("id,content,created_at,user_id,profiles!channel_comments_user_profile_fkey(display_name,username,avatar_url)").eq("post_id",activeCommentPost.postId).order("created_at",{ascending:true}).limit(200);
+  if(error){$("#postCommentsList").innerHTML='<p class="muted">Не удалось загрузить комментарии. Проверь SQL-обновление.</p>';return;}
+  $("#commentsSubtitle").textContent=`${data.length} комментариев · обсуждение привязано к посту`;
+  $("#postCommentsList").innerHTML=data.map(c=>`<article class="comment-item"><div class="avatar">${c.profiles?.avatar_url?`<img src="${escapeHTML(c.profiles.avatar_url)}" alt="">`:escapeHTML(initials(c.profiles?.display_name||"?"))}</div><div class="comment-content"><div class="comment-byline"><strong>${escapeHTML(c.profiles?.display_name||"Пользователь")}</strong><time>${timeLabel(c.created_at)}</time></div><p>${escapeHTML(c.content)}</p></div></article>`).join("")||'<p class="muted comments-empty">Пока нет комментариев. Будь первым!</p>';
+  $("#postCommentsList").scrollTop=$("#postCommentsList").scrollHeight;
+}
+
+async function openCommunityManager(id) {
+  const item=conversations.find(c=>c.id===id); if(!item || item.type==="direct"){showToast("Управление доступно для групп и каналов.");return;}
+  $("#communityDialogTitle").textContent=item.type==="channel"?"Управление каналом":"Управление группой";
+  $("#communityTitleInput").value=item.title||""; $("#communityDescriptionInput").value=item.description||"";
+  $("#communityNamePreview").textContent=item.title||"Сообщество"; setAvatar($("#communityAvatarPreview"),item.avatar_url,item.title);
+  $("#discussionGroupLabel").classList.toggle("hidden",item.type!=="channel");
+  const groups=conversations.filter(c=>c.type==="group");
+  $("#discussionGroupSelect").innerHTML='<option value="">Без группы обсуждений</option>'+groups.map(g=>`<option value="${escapeHTML(g.id)}">${escapeHTML(g.title||"Группа")}</option>`).join("");
+  $("#discussionGroupSelect").value=item.linked_group_id||"";
+  const {count:memberCount}=await client.from("conversation_members").select("user_id",{count:"exact",head:true}).eq("conversation_id",id);
+  const {data:members,error}=await client.from("conversation_members").select("user_id,role,profiles!conversation_members_user_profile_fkey(id,display_name,username,avatar_url)").eq("conversation_id",id);
+  const {count:postCount}=await client.from("messages").select("id",{count:"exact",head:true}).eq("conversation_id",id);
+  $("#communityStats").textContent=`${memberCount||0} участников · ${postCount||0} ${item.type==="channel"?"публикаций":"сообщений"}`;
+  $("#communityMemberCount").textContent=String(memberCount||0);
+  if(error){$("#communityMembersList").innerHTML='<p class="muted">Не удалось загрузить список участников. Выполни SQL-обновление.</p>';}
+  else {
+    const canManage=item.created_by===currentUser.id || item.myRole==="owner" || item.myRole==="admin";
+    const canAssign=item.created_by===currentUser.id || item.myRole==="owner";
+    $("#communityMembersList").innerHTML=(members||[]).map(m=>{const profile=m.profiles||{}; const role=m.role||"member"; const self=m.user_id===currentUser.id; const owner=role==="owner"; const roleAction=canAssign&&!owner&&!self?`${role==="admin"?`<button data-member-action="role" data-role="member" data-user-id="${escapeHTML(m.user_id)}">Снять админа</button>`:`<button data-member-action="role" data-role="admin" data-user-id="${escapeHTML(m.user_id)}">Назначить админом</button>`}`:""; const removeAction=canManage&&!owner&&!self&&!(item.myRole==="admin"&&role==="admin")?`<button class="member-remove" data-member-action="remove" data-user-id="${escapeHTML(m.user_id)}">Удалить</button>`:""; return `<div class="community-member"><div class="avatar">${profile.avatar_url?`<img src="${escapeHTML(profile.avatar_url)}" alt="">`:escapeHTML(initials(profile.display_name||profile.username||"?"))}</div><div class="community-member-copy"><strong>${escapeHTML(profile.display_name||"Пользователь")}${self?" (вы)":""}</strong><span>${profile.username?"@"+escapeHTML(profile.username)+" · ":""}${role==="owner"?"Владелец":role==="admin"?"Администратор":"Участник"}</span></div>${roleAction||removeAction?`<div class="member-actions">${roleAction}${removeAction}</div>`:""}</div>`;}).join("")||'<p class="muted">Участников пока нет.</p>';
+    if(!canManage){$("#communityMetaForm").querySelectorAll("input,textarea,select,button").forEach(el=>el.disabled=true);$("#communityAvatarInput").disabled=true;$("#communityAvatarInput").closest("label").classList.add("hidden");}
+    else {$("#communityMetaForm").querySelectorAll("input,textarea,select,button").forEach(el=>el.disabled=false);$("#communityAvatarInput").closest("label").classList.remove("hidden");}
+  }
+  $("#communityDialog").showModal();
+}
+
 async function browseChannels() {
   $("#channelsResults").innerHTML='<p class="muted">Загрузка каналов…</p>'; $("#channelsDialog").showModal();
   const {data,error}=await client.from("conversations").select("id,title,created_by").eq("type","channel").order("created_at",{ascending:false}).limit(50);
@@ -592,6 +649,9 @@ async function init() {
     $("#welcome").classList.remove("hidden");
     currentConversationId = null;
     currentPeer = null;
+    messageCache = [];
+    $("#messages").replaceChildren();
+    $("#messages").scrollTop = 0;
     if (messageChannel) { client.removeChannel(messageChannel); messageChannel = null; }
     renderChatList();
   };
@@ -648,7 +708,7 @@ async function init() {
     if (currentConversationId === targetConversationId) await loadMessages();
     await refreshConversations(); showToast("Фото отправлено.");
   });
-  $("#chatOptionsBtn").addEventListener("click", () => { if (!currentConversationId) return; const item=conversations.find(c=>c.id===currentConversationId); showToast(item ? `${item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : "Личная переписка"}: ${item.title || item.peer.display_name}` : "Чат"); });
+  $("#chatOptionsBtn").addEventListener("click", () => { if (!currentConversationId) return; const item=conversations.find(c=>c.id===currentConversationId); if(item?.type==="direct") showPublicProfile(item.peer?.id); else openCommunityManager(currentConversationId); });
   $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(btn => btn.addEventListener("click", () => {
     $("#settingsDialog").querySelectorAll("[data-settings-tab]").forEach(b=>b.classList.toggle("active",b===btn));
     $("#settingsDialog").querySelectorAll("[data-settings-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.settingsPanel!==btn.dataset.settingsTab));
@@ -713,6 +773,33 @@ async function init() {
       recorderInstance.start(250);
       $("#voiceBtn").classList.add("recording");$("#voiceBtn").textContent="■";showToast("Запись идёт. Нажми ■, чтобы отправить.");
     } catch(error){stream?.getTracks().forEach(t=>t.stop());recording=null;$("#voiceBtn").classList.remove("recording");$("#voiceBtn").textContent="🎙";showToast("Не удалось включить микрофон. Разреши доступ в браузере: "+(error.message||"доступ запрещён"),true);}
+  });
+  $("#postCommentForm").addEventListener("submit",async event=>{
+    event.preventDefault(); if(!activeCommentPost)return; const content=$("#postCommentInput").value.trim(); if(!content)return;
+    const button=event.submitter; if(button)button.disabled=true;
+    const {error}=await client.from("channel_comments").insert({channel_id:activeCommentPost.channelId,post_id:activeCommentPost.postId,user_id:currentUser.id,content});
+    if(button)button.disabled=false;
+    if(error){showToast("Не удалось отправить комментарий: "+error.message,true);return;}
+    $("#postCommentInput").value=""; await loadPostComments(); await loadMessages();
+  });
+  $("#communityAvatarInput").addEventListener("change", async event => {
+    const file=event.target.files?.[0]; event.target.value=""; if(!file) return;
+    if(!file.type.startsWith("image/")){showToast("Выбери изображение.",true);return;}
+    try { const url=await uploadMedia(file,"community-avatar"); const {error}=await client.rpc("update_community_meta",{target_conversation_id:currentConversationId,new_title:$("#communityTitleInput").value.trim(),new_description:$("#communityDescriptionInput").value.trim(),new_avatar_url:url,new_linked_group_id:$("#discussionGroupSelect").value||null}); if(error) throw error; await refreshConversations(); setAvatar($("#communityAvatarPreview"),url,$("#communityTitleInput").value); showToast("Фото сообщества обновлено."); } catch(error){showToast("Не удалось обновить фото: "+error.message,true);}
+  });
+  $("#communityMetaForm").addEventListener("submit", async event => {
+    event.preventDefault(); const item=conversations.find(c=>c.id===currentConversationId); if(!item) return;
+    const {error}=await client.rpc("update_community_meta",{target_conversation_id:item.id,new_title:$("#communityTitleInput").value.trim(),new_description:$("#communityDescriptionInput").value.trim(),new_avatar_url:item.avatar_url||null,new_linked_group_id:$("#discussionGroupSelect").value||null});
+    if(error){showToast("Не удалось сохранить. Проверь SQL-обновление и права владельца: "+error.message,true);return;}
+    $("#communityDialog").close(); await refreshConversations(); await openConversation(item.id); showToast("Настройки сообщества сохранены.");
+  });
+  $("#communityMembersList").addEventListener("click", async event => {
+    const button=event.target.closest("[data-member-action]"); if(!button) return;
+    const item=conversations.find(c=>c.id===currentConversationId); if(!item) return;
+    const userId=button.dataset.userId, action=button.dataset.memberAction;
+    if(action==="role") { const role=button.dataset.role; const {error}=await client.rpc("set_community_member_role",{target_conversation_id:item.id,target_user_id:userId,new_role:role}); if(error){showToast("Не удалось изменить роль: "+error.message,true);return;} showToast(role==="admin"?"Администратор назначен.":"Права администратора сняты."); }
+    if(action==="remove") { if(!confirm("Удалить участника из сообщества?")) return; const {error}=await client.rpc("remove_community_member",{target_conversation_id:item.id,target_user_id:userId}); if(error){showToast("Не удалось удалить участника: "+error.message,true);return;} showToast("Участник удалён."); }
+    await openCommunityManager(item.id);
   });
   $("#imageLightboxClose").addEventListener("click", () => $("#imageLightbox").close());
   $("#imageLightbox").addEventListener("click", event => { if (event.target === $("#imageLightbox")) $("#imageLightbox").close(); });

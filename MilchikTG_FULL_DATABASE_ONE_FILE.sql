@@ -466,3 +466,151 @@ commit;
 -- 2) Дубли username блокируются индексом PostgreSQL без учёта регистра.
 -- 3) Статус "Прочитано" появляется после открытия чата получателем и успешной записи в message_reads.
 -- 4) Для загрузки участников в JavaScript используется FK profiles!conversation_members_user_profile_fkey.
+
+-- ─────────────────────────────────────────────────────────────
+-- 9. Расширенное управление каналами/группами и обсуждения
+-- Без удаления существующих аккаунтов, чатов или сообщений.
+-- ─────────────────────────────────────────────────────────────
+begin;
+alter table public.conversations add column if not exists description text not null default '';
+alter table public.conversations add column if not exists avatar_url text;
+alter table public.conversations add column if not exists linked_group_id uuid references public.conversations(id) on delete set null;
+alter table public.conversation_members add column if not exists role text not null default 'member';
+alter table public.conversation_members drop constraint if exists conversation_members_role_check;
+alter table public.conversation_members add constraint conversation_members_role_check check (role in ('owner','admin','member'));
+update public.conversation_members cm set role='owner'
+from public.conversations c where c.id=cm.conversation_id and c.created_by=cm.user_id and cm.role<>'owner';
+create index if not exists conversations_linked_group_idx on public.conversations(linked_group_id);
+
+create or replace function public.create_community_space(space_title text, space_type text, member_ids uuid[] default '{}')
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare caller uuid := auth.uid(); new_id uuid; target uuid;
+begin
+  if caller is null then raise exception 'Сначала войдите в аккаунт'; end if;
+  if space_type not in ('group','channel') then raise exception 'Недопустимый тип сообщества'; end if;
+  if char_length(trim(space_title)) < 2 or char_length(trim(space_title)) > 60 then raise exception 'Название должно содержать от 2 до 60 символов'; end if;
+  insert into public.conversations(created_by,type,title,description) values(caller,space_type,trim(space_title),'') returning id into new_id;
+  insert into public.conversation_members(conversation_id,user_id,role) values(new_id,caller,'owner');
+  if space_type='group' then
+    foreach target in array coalesce(member_ids,'{}'::uuid[]) loop
+      if target<>caller and exists(select 1 from public.profiles p where p.id=target) then
+        insert into public.conversation_members(conversation_id,user_id,role) values(new_id,target,'member') on conflict do nothing;
+      end if;
+    end loop;
+  end if;
+  return new_id;
+end; $$;
+
+create or replace function public.update_community_meta(target_conversation_id uuid,new_title text,new_description text,new_avatar_url text,new_linked_group_id uuid default null)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller uuid := auth.uid(); c public.conversations%rowtype;
+begin
+  if caller is null then raise exception 'Сначала войдите в аккаунт'; end if;
+  select * into c from public.conversations where id=target_conversation_id for update;
+  if not found or c.type='direct' then raise exception 'Сообщество не найдено'; end if;
+  if not exists(select 1 from public.conversation_members cm where cm.conversation_id=c.id and cm.user_id=caller and cm.role in ('owner','admin')) then raise exception 'Изменять настройки может только владелец или администратор'; end if;
+  if char_length(trim(new_title))<2 or char_length(trim(new_title))>60 then raise exception 'Название должно содержать от 2 до 60 символов'; end if;
+  if char_length(coalesce(new_description,''))>500 then raise exception 'Описание слишком длинное'; end if;
+  if new_linked_group_id is not null then
+    if c.type<>'channel' or not exists(select 1 from public.conversations g where g.id=new_linked_group_id and g.type='group') then raise exception 'Для комментариев выбери существующую группу'; end if;
+    if not exists(select 1 from public.conversation_members cm where cm.conversation_id=new_linked_group_id and cm.user_id=caller) then raise exception 'Ты должен состоять в группе обсуждений'; end if;
+  end if;
+  update public.conversations set title=trim(new_title),description=coalesce(trim(new_description),''),avatar_url=new_avatar_url,linked_group_id=case when c.type='channel' then new_linked_group_id else null end,updated_at=now() where id=c.id;
+end; $$;
+
+create or replace function public.set_community_member_role(target_conversation_id uuid,target_user_id uuid,new_role text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller uuid := auth.uid(); caller_role text; target_role text;
+begin
+  if caller is null then raise exception 'Сначала войдите в аккаунт'; end if;
+  if new_role not in ('admin','member') then raise exception 'Недопустимая роль'; end if;
+  select role into caller_role from public.conversation_members where conversation_id=target_conversation_id and user_id=caller;
+  select role into target_role from public.conversation_members where conversation_id=target_conversation_id and user_id=target_user_id;
+  if coalesce(caller_role,'')<>'owner' then raise exception 'Назначать администраторов может только владелец'; end if;
+  if target_role is null then raise exception 'Участник не найден'; end if;
+  if target_role='owner' or target_user_id=caller then raise exception 'Нельзя изменить роль владельца'; end if;
+  update public.conversation_members set role=new_role where conversation_id=target_conversation_id and user_id=target_user_id;
+end; $$;
+
+create or replace function public.remove_community_member(target_conversation_id uuid,target_user_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller uuid := auth.uid(); caller_role text; target_role text;
+begin
+  if caller is null then raise exception 'Сначала войдите в аккаунт'; end if;
+  select role into caller_role from public.conversation_members where conversation_id=target_conversation_id and user_id=caller;
+  select role into target_role from public.conversation_members where conversation_id=target_conversation_id and user_id=target_user_id;
+  if coalesce(caller_role,'') not in ('owner','admin') then raise exception 'Удалять участников может только владелец или администратор'; end if;
+  if target_role is null then raise exception 'Участник не найден'; end if;
+  if target_role='owner' or target_user_id=caller then raise exception 'Нельзя удалить владельца или самого себя этим действием'; end if;
+  if caller_role='admin' and target_role='admin' then raise exception 'Администратор не может удалить другого администратора'; end if;
+  delete from public.conversation_members where conversation_id=target_conversation_id and user_id=target_user_id;
+end; $$;
+
+revoke all on function public.update_community_meta(uuid,text,text,text,uuid) from public;
+revoke all on function public.set_community_member_role(uuid,uuid,text) from public;
+revoke all on function public.remove_community_member(uuid,uuid) from public;
+grant execute on function public.update_community_meta(uuid,text,text,text,uuid) to authenticated;
+grant execute on function public.set_community_member_role(uuid,uuid,text) to authenticated;
+grant execute on function public.remove_community_member(uuid,uuid) to authenticated;
+grant select on public.conversations, public.conversation_members to authenticated;
+commit;
+
+-- ─────────────────────────────────────────────────────────────
+-- 10. Комментарии под отдельными постами + вступление в обсуждение
+-- ─────────────────────────────────────────────────────────────
+begin;
+create table if not exists public.channel_comments (
+  id uuid primary key default gen_random_uuid(),
+  channel_id uuid not null references public.conversations(id) on delete cascade,
+  post_id uuid not null references public.messages(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  content text not null check (char_length(trim(content)) between 1 and 1500),
+  created_at timestamptz not null default now()
+);
+alter table public.channel_comments enable row level security;
+alter table public.channel_comments drop constraint if exists channel_comments_post_channel_fkey;
+do $$ begin
+  if not exists(select 1 from pg_constraint where conname='channel_comments_user_profile_fkey' and conrelid='public.channel_comments'::regclass) then
+    alter table public.channel_comments add constraint channel_comments_user_profile_fkey foreign key(user_id) references public.profiles(id) on delete cascade;
+  end if;
+end $$;
+create index if not exists channel_comments_post_created_idx on public.channel_comments(post_id,created_at);
+
+drop policy if exists "Members can read post comments" on public.channel_comments;
+create policy "Members can read post comments" on public.channel_comments for select to authenticated using (
+  public.is_conversation_member(channel_id) and exists(
+    select 1 from public.conversations c where c.id=channel_comments.channel_id and c.type='channel' and c.linked_group_id is not null
+  )
+);
+drop policy if exists "Discussion members can write post comments" on public.channel_comments;
+create policy "Discussion members can write post comments" on public.channel_comments for insert to authenticated with check (
+  user_id=(select auth.uid()) and char_length(trim(content)) between 1 and 1500 and exists(
+    select 1 from public.conversations c where c.id=channel_comments.channel_id and c.type='channel' and c.linked_group_id is not null and public.is_conversation_member(c.id) and public.is_conversation_member(c.linked_group_id)
+  ) and exists(select 1 from public.messages m where m.id=channel_comments.post_id and m.conversation_id=channel_comments.channel_id)
+);
+grant select,insert on public.channel_comments to authenticated;
+
+create or replace function public.join_linked_discussion(target_channel_id uuid)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare caller uuid:=auth.uid(); group_id uuid;
+begin
+  if caller is null then raise exception 'Сначала войдите в аккаунт'; end if;
+  if not public.is_conversation_member(target_channel_id) then raise exception 'Сначала вступи в канал'; end if;
+  select linked_group_id into group_id from public.conversations where id=target_channel_id and type='channel';
+  if group_id is null then raise exception 'У этого канала ещё не подключена группа обсуждений'; end if;
+  insert into public.conversation_members(conversation_id,user_id,role) values(group_id,caller,'member') on conflict do nothing;
+  return group_id;
+end; $$;
+revoke all on function public.join_linked_discussion(uuid) from public;
+grant execute on function public.join_linked_discussion(uuid) to authenticated;
+
+-- В каналах публикуют только владелец и назначенные администраторы.
+drop policy if exists "Members can send as themselves" on public.messages;
+create policy "Members can send as themselves" on public.messages for insert to authenticated with check (
+  sender_id=(select auth.uid()) and public.is_conversation_member(conversation_id) and exists(
+    select 1 from public.conversations c where c.id=messages.conversation_id and (c.type<>'channel' or exists(
+      select 1 from public.conversation_members cm where cm.conversation_id=c.id and cm.user_id=(select auth.uid()) and cm.role in ('owner','admin')
+    ))
+  )
+);
+commit;

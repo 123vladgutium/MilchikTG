@@ -10,7 +10,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <meta name="description" content="MilchikTG — мессенджер для общения">
   <title>MilchikTG</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4.0">
 </head>
 <body>
   <div id="toast" class="toast hidden" role="status"></div>
@@ -167,11 +167,30 @@
     <div class="dialog-body public-profile-body"><div id="publicProfileAvatar" class="avatar avatar-large">?</div><h3 id="publicProfileName">Пользователь</h3><p id="publicProfileUsername" class="profile-username-label"></p><p id="publicProfileBio" class="muted">Нет описания</p><button id="publicProfileMessageBtn" class="primary" type="button">Написать сообщение</button></div>
   </dialog>
 
+  <dialog id="communityDialog" class="dialog community-dialog">
+    <form method="dialog" class="dialog-head"><div><h2 id="communityDialogTitle">Управление сообществом</h2><p class="muted">Оформление, обсуждения, участники и статистика.</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <div class="community-body">
+      <div class="community-hero"><div id="communityAvatarPreview" class="avatar avatar-large">C</div><div><strong id="communityNamePreview">Сообщество</strong><p id="communityStats" class="muted small">Загрузка статистики…</p></div><label class="secondary-button">Изменить фото<input id="communityAvatarInput" type="file" accept="image/*" hidden></label></div>
+      <form id="communityMetaForm" class="profile-form">
+        <label>Название<input id="communityTitleInput" maxlength="60" required></label>
+        <label>Описание сообщества<textarea id="communityDescriptionInput" maxlength="500" rows="3" placeholder="О чём этот канал или группа? Ссылки, правила, расписание…"></textarea></label>
+        <label id="discussionGroupLabel">Группа для комментариев под постами<select id="discussionGroupSelect"><option value="">Без группы обсуждений</option></select><small class="muted">Выбери группу, в которой участники будут обсуждать публикации канала.</small></label>
+        <button class="primary" type="submit">Сохранить изменения</button>
+      </form>
+      <section class="community-members"><div class="section-heading"><h3>Участники и администраторы</h3><span id="communityMemberCount" class="count-chip">0</span></div><p class="muted small">Владелец может назначать администраторов и удалять участников. Права применяются на сервере после выполнения SQL-обновления.</p><div id="communityMembersList"><p class="muted">Загрузка участников…</p></div></section>
+    </div>
+  </dialog>
+
+  <dialog id="postCommentsDialog" class="dialog comments-dialog">
+    <form method="dialog" class="dialog-head"><div><h2>Обсуждение публикации</h2><p id="commentsSubtitle" class="muted">Комментарии участников канала</p></div><button class="close-button" aria-label="Закрыть">×</button></form>
+    <div id="postCommentsList" class="comments-list"><p class="muted">Загрузка комментариев…</p></div>
+    <form id="postCommentForm" class="comment-composer"><textarea id="postCommentInput" rows="2" maxlength="1500" placeholder="Напишите комментарий…" required></textarea><button class="primary" type="submit">Отправить</button></form>
+  </dialog>
   <dialog id="imageLightbox" class="image-lightbox">
     <button id="imageLightboxClose" class="lightbox-close" type="button" aria-label="Закрыть">×</button>
     <img id="imageLightboxImg" alt="Полноразмерное фото">
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=4.0"></script>
 </body>
 </html>
