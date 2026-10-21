@@ -89,3 +89,16 @@ input,textarea,select{background:#0d111c;border-color:#293149;border-radius:13px
 .audio-open-error{color:#ffb2b7}
 .message-meta{font-variant-numeric:tabular-nums}
 @media(max-width:760px){.chat-area{height:100dvh}.conversation{height:100dvh}.messages{padding-bottom:14px}.composer{padding-bottom:max(10px,env(safe-area-inset-bottom))}.composer-note{padding-bottom:max(7px,env(safe-area-inset-bottom))}.image-lightbox{padding:58px 8px 10px}.message-image{max-width:min(74vw,480px);max-height:45vh}}
+
+
+/* MilchikTG polish: message motion, clearer identity and unread attention */
+.account-username{display:block;color:#b9adff;font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.unread-badge{animation:badge-pop .24s ease-out}
+.message-row.message-arrival{animation:message-in .22s cubic-bezier(.2,.8,.2,1) both}
+.message-row.mine{transform-origin:bottom right}
+.message-row:not(.mine){transform-origin:bottom left}
+.message-row .bubble{transition:box-shadow .18s ease,transform .18s ease}
+.message-row:hover .bubble{box-shadow:0 6px 22px #0002}
+@keyframes message-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes badge-pop{from{transform:scale(.72);opacity:.45}to{transform:scale(1);opacity:1}}
+@media(prefers-reduced-motion:reduce){.message-row,.unread-badge{animation:none!important}}

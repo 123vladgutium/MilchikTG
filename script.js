@@ -24,6 +24,7 @@ let messageCache = [];
 let recording = null;
 let recordedChunks = [];
 let publicProfileTarget = null;
+let listRefreshTimer = null;
 
 function showToast(message, error = false) {
   toastEl.textContent = message;
@@ -78,6 +79,7 @@ async function loadMyProfile() {
   if (error) throw error;
   currentProfile = data;
   $("#myName").textContent = data.display_name || currentUser.email.split("@")[0];
+  if ($("#myUsername")) $("#myUsername").textContent = data.username ? "@" + data.username : "Установите юзернейм в профиле";
   $("#myEmail").textContent = currentUser.email;
   setAvatar($("#myAvatar"), data.avatar_url, data.display_name || currentUser.email);
 }
@@ -96,7 +98,7 @@ async function refreshConversations() {
   }
   const {data: memberRows, error: memberError} = await client
     .from("conversation_members")
-    .select("conversation_id, user_id, profiles!conversation_members_user_id_fkey(id, display_name, bio, avatar_url)")
+    .select("conversation_id, user_id, profiles!conversation_members_user_profile_fkey(id, display_name, username, bio, avatar_url)")
     .in("conversation_id", ids);
   if (memberError) { showToast("Ошибка загрузки участников: " + memberError.message, true); return; }
   const {data: messageRows, error: messageError} = await client
@@ -137,7 +139,7 @@ function renderChatList() {
   const list = $("#chatList");
   const query = $("#chatSearch").value.trim().toLowerCase();
   const items = conversations.filter(c => {
-    const title = (c.title || c.peer.display_name || "").toLowerCase();
+    const title = (c.title || c.peer.display_name || "").toLowerCase() + " " + (c.peer?.username || "").toLowerCase();
     const preview = (c.latest?.content || "").toLowerCase();
     return title.includes(query) || preview.includes(query);
   });
@@ -151,7 +153,7 @@ function renderChatList() {
     return `<button class="chat-item ${c.id === currentConversationId ? "active" : ""}" data-chat-id="${c.id}">
       <div class="avatar">${c.peer?.avatar_url && c.type === "direct" ? `<img src="${escapeHTML(c.peer.avatar_url)}" alt="">` : escapeHTML(initials(name))}</div>
       <div class="chat-copy"><div class="chat-topline"><strong>${escapeHTML(name)}</strong><span class="chat-time">${c.latest ? timeLabel(c.latest.created_at) : ""}</span></div>
-      <div class="chat-preview">${escapeHTML(preview)}</div></div>${c.unread > 0 && c.id !== currentConversationId ? `<span class="unread-badge">${c.unread > 99 ? "99+" : c.unread}</span>` : ""}</button>`;
+      <div class="chat-preview">${escapeHTML(preview)}</div></div>${c.unread > 0 && c.id !== currentConversationId ? `<span class="unread-badge" title="${c.unread} новое сообщение" aria-label="${c.unread} непрочитанных сообщений">${c.unread > 99 ? "99+" : c.unread}</span>` : ""}</button>`;
   }).join("");
   list.querySelectorAll("[data-chat-id]").forEach(button => button.addEventListener("click", () => openConversation(button.dataset.chatId)));
 }
@@ -162,7 +164,7 @@ async function openConversation(id) {
   currentPeer = item.peer;
   const chatName = item.title || item.peer.display_name || "Пользователь";
   $("#peerName").textContent = chatName;
-  $("#peerEmail").textContent = item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : "Личная переписка";
+  $("#peerEmail").textContent = item.type === "channel" ? "Канал" : item.type === "group" ? "Группа" : (item.peer?.username ? "@" + item.peer.username + " · личная переписка" : "Личная переписка");
   setAvatar($("#peerAvatar"), item.type === "direct" ? item.peer?.avatar_url : "", chatName);
   $("#peerAvatar").style.cursor = item.type === "direct" ? "pointer" : "default";
   $("#welcome").classList.add("hidden");
@@ -191,12 +193,29 @@ async function loadMessages() {
 }
 async function markConversationRead() {
   if (!currentUser || !currentConversationId) return;
-  const {data, error} = await client.from("messages").select("id").eq("conversation_id", currentConversationId).neq("sender_id", currentUser.id).order("created_at", {ascending:false}).limit(300);
-  if (error || !data?.length) { localStorage.setItem(`milchiktg-unread-${currentConversationId}`, "0"); await refreshConversations(); return; }
-  const rows = data.map(m => ({message_id:m.id,user_id:currentUser.id}));
-  const result = await client.from("message_reads").upsert(rows, {onConflict:"message_id,user_id", ignoreDuplicates:true});
-  if (result.error) console.warn("Read receipt error:", result.error.message);
-  localStorage.setItem(`milchiktg-unread-${currentConversationId}`, "0");
+  const conversationId = currentConversationId;
+  const {data, error} = await client.from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .neq("sender_id", currentUser.id)
+    .order("created_at", {ascending:false})
+    .limit(300);
+  if (error) {
+    console.warn("Could not load messages to mark as read:", error.message);
+    showToast("Не удалось отметить сообщения прочитанными: " + error.message, true);
+    return;
+  }
+  if (data?.length) {
+    const rows = data.map(m => ({message_id:m.id, user_id:currentUser.id, read_at:new Date().toISOString()}));
+    const result = await client.from("message_reads").upsert(rows, {onConflict:"message_id,user_id", ignoreDuplicates:true});
+    if (result.error) {
+      console.warn("Read receipt error:", result.error.message);
+      showToast("Не удалось сохранить прочтение. Проверьте SQL-права для message_reads.", true);
+      return;
+    }
+  }
+  localStorage.setItem(`milchiktg-unread-${conversationId}`, "0");
+  await loadMessages();
   await refreshConversations();
 }
 function renderMessages(rows, receipts = []) {
@@ -211,7 +230,8 @@ function renderMessages(rows, receipts = []) {
     const attachment = m.attachment_url ? (m.attachment_type === "audio" ? `<audio class="message-audio" controls preload="none" playsinline src="${escapeHTML(m.attachment_url)}"></audio><a class="audio-open-link" href="${escapeHTML(m.attachment_url)}" target="_blank" rel="noopener">Открыть аудио отдельно</a>` : `<button class="image-preview-button" type="button" data-view-image="${escapeHTML(m.attachment_url)}" aria-label="Открыть фото"><img class="message-image" src="${escapeHTML(m.attachment_url)}" alt="Фото в сообщении" loading="lazy"></button>`) : "";
     const actions = mine ? `<div class="message-actions"><button data-msg-action="pin" data-msg-id="${m.id}">${m.is_pinned ? "📌 Открепить" : "📌 Закрепить"}</button>${m.content ? `<button data-msg-action="edit" data-msg-id="${m.id}">Изменить</button>` : ""}<button class="message-delete" data-msg-action="delete" data-msg-id="${m.id}">Удалить</button></div>` : "";
     const seen = mine && receipts.some(r => String(r.message_id) === String(m.id));
-    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? ` · ${seen ? "✓✓ Прочитано" : "✓ Отправлено"}` : ""}</div>${actions}</article>`;
+    const fresh = Date.now() - new Date(m.created_at).getTime() < 2500;
+    return `<article class="message-row ${mine ? "mine" : ""} ${m.is_pinned ? "pinned-message" : ""} ${fresh ? "message-arrival" : ""}"><div class="bubble">${m.is_pinned ? '<div class="pinned-label">📌 Закреплено</div>' : ""}${attachment}${m.content ? `<div>${escapeHTML(m.content)}</div>` : ""}</div><div class="message-meta">${timeLabel(m.created_at)}${m.edited_at ? " · изменено" : ""}${mine ? ` · ${seen ? "✓✓ Прочитано" : "✓ Отправлено"}` : ""}</div>${actions}</article>`;
   }).join("");
   container.querySelectorAll("[data-msg-action]").forEach(button => button.addEventListener("click", () => handleMessageAction(button.dataset.msgAction, button.dataset.msgId)));
   container.scrollTop = container.scrollHeight;
@@ -307,6 +327,8 @@ function stopSubscriptions() {
   if (listChannel && client) client.removeChannel(listChannel);
   messageChannel = null;
   listChannel = null;
+  if (listRefreshTimer) clearInterval(listRefreshTimer);
+  listRefreshTimer = null;
 }
 function subscribeToMessages() {
   if (messageChannel) client.removeChannel(messageChannel);
@@ -319,7 +341,7 @@ function subscribeToMessages() {
       if (payload.eventType === "INSERT" && payload.new.sender_id !== currentUser.id) { playMessageSound(); await markConversationRead(); }
       await refreshConversations();
     })
-    .on("postgres_changes", {event:"INSERT", schema:"public", table:"message_reads", filter:"user_id=neq." + currentUser.id}, async () => {
+    .on("postgres_changes", {event:"*", schema:"public", table:"message_reads"}, async () => {
       await loadMessages();
       await refreshConversations();
     }).subscribe();
@@ -329,6 +351,7 @@ function subscribeToChatList() {
   listChannel = client.channel("milchiktg-list-" + currentUser.id)
     .on("postgres_changes", {event:"INSERT", schema:"public", table:"messages"}, () => refreshConversations())
     .on("postgres_changes", {event:"INSERT", schema:"public", table:"conversation_members", filter:"user_id=eq." + currentUser.id}, () => refreshConversations())
+    .on("postgres_changes", {event:"*", schema:"public", table:"message_reads"}, () => refreshConversations())
     .subscribe();
 }
 function openPeopleDialog() {
@@ -345,11 +368,12 @@ async function searchPeople() {
     return;
   }
   result.innerHTML = '<p class="muted">Поиск…</p>';
-  const safeQuery = query.replace(/[%,()]/g, " ");
+  const cleanQuery = query.replace(/^@/, "").replace(/[%,()]/g, " ");
+  const safeQuery = cleanQuery.replace(/\\/g, "");
   const {data, error} = await client.from("profiles")
     .select("id, display_name, username, bio, avatar_url")
     .neq("id", currentUser.id)
-    .or(`display_name.ilike.%${safeQuery}%,username.ilike.%${safeQuery.replace(/^@/, "")}%`)
+    .or(`display_name.ilike.%${safeQuery}%,username.ilike.%${safeQuery}%`)
     .order("display_name")
     .limit(20);
   if (error) { result.innerHTML = `<p class="muted">Ошибка поиска: ${escapeHTML(error.message)}</p>`; return; }
@@ -420,6 +444,10 @@ async function enterApp(user) {
     await loadMyProfile();
     await refreshConversations();
     subscribeToChatList();
+    if (listRefreshTimer) clearInterval(listRefreshTimer);
+    listRefreshTimer = setInterval(() => {
+      if (currentUser && document.visibilityState !== "hidden") refreshConversations();
+    }, 10000);
   } catch (error) {
     showToast("Не удалось загрузить профиль. Выполните SQL-настройку из файла README.", true);
   }
